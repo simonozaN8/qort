@@ -5,36 +5,43 @@ import '../../core/constants/app_shell_layout.dart';
 import '../../core/theme/qort_design_system.dart';
 import '../../features/profile/user_model.dart';
 
-/// Apatinė navigacija: Pagrindinis · Rungtynės · [+] · Q (Feed) · Profilis.
+/// Apatinė navigacija: Pagrindinis · Rungtynės · [Q] · Sukurti · Profilis.
 class QortBottomNav extends StatelessWidget {
   final int currentIndex;
   final AppMode currentMode;
   final ValueChanged<int> onTabSelected;
-  final VoidCallback onFabPressed;
+  final VoidCallback onCreatePressed;
 
   const QortBottomNav({
     super.key,
     required this.currentIndex,
     required this.currentMode,
     required this.onTabSelected,
-    required this.onFabPressed,
+    required this.onCreatePressed,
   });
 
-  static const _items = [
+  static const _feedIndex = 2;
+  static const _createIndex = 3;
+
+  static const _leftItems = [
     _NavItem(index: 0, icon: LucideIcons.home, label: 'Pagrindinis'),
     _NavItem(index: 1, icon: LucideIcons.trophy, label: 'Rungtynės'),
-    _NavItem(index: 2, icon: LucideIcons.rss, label: 'Feed', useQIcon: true),
-    _NavItem(index: 3, icon: LucideIcons.user, label: 'Profilis'),
+  ];
+
+  static const _rightItems = [
+    _NavItem(index: _createIndex, icon: LucideIcons.plus, label: 'Sukurti'),
+    _NavItem(index: 4, icon: LucideIcons.user, label: 'Profilis'),
   ];
 
   @override
   Widget build(BuildContext context) {
-    final fabAccent = QortDesignSystem.modeAccent(currentMode);
+    final accent = QortDesignSystem.modeAccent(currentMode);
     const fabSize = 56.0;
     final bottomPad = MediaQuery.paddingOf(context).bottom;
     final height = AppShellLayout.bottomNavBarHeight +
         AppShellLayout.fabOverlap +
         bottomPad;
+    final feedSelected = currentIndex == _feedIndex;
 
     return SizedBox(
       height: height,
@@ -68,8 +75,8 @@ class QortBottomNav extends StatelessWidget {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
-                            _tab(context, _items[0]),
-                            _tab(context, _items[1]),
+                            _tab(context, _leftItems[0], accent),
+                            _tab(context, _leftItems[1], accent),
                           ],
                         ),
                       ),
@@ -78,8 +85,8 @@ class QortBottomNav extends StatelessWidget {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
-                            _tab(context, _items[2]),
-                            _tab(context, _items[3]),
+                            _tab(context, _rightItems[0], accent, onTap: onCreatePressed),
+                            _tab(context, _rightItems[1], accent),
                           ],
                         ),
                       ),
@@ -92,12 +99,24 @@ class QortBottomNav extends StatelessWidget {
           Positioned(
             top: 0,
             child: FloatingActionButton(
-              onPressed: onFabPressed,
-              backgroundColor: fabAccent,
-              elevation: 6,
-              highlightElevation: 8,
-              shape: const CircleBorder(),
-              child: const Icon(LucideIcons.plus, color: Colors.white, size: 28),
+              onPressed: () => onTabSelected(_feedIndex),
+              backgroundColor: accent,
+              elevation: feedSelected ? 10 : 6,
+              highlightElevation: feedSelected ? 12 : 8,
+              shape: CircleBorder(
+                side: feedSelected
+                    ? BorderSide(color: Colors.white.withValues(alpha: 0.35), width: 2)
+                    : BorderSide.none,
+              ),
+              child: const Text(
+                'Q',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                  height: 1,
+                ),
+              ),
             ),
           ),
         ],
@@ -105,16 +124,17 @@ class QortBottomNav extends StatelessWidget {
     );
   }
 
-  Widget _tab(BuildContext context, _NavItem item) {
+  Widget _tab(
+    BuildContext context,
+    _NavItem item,
+    Color accent, {
+    VoidCallback? onTap,
+  }) {
     final selected = currentIndex == item.index;
-    final iconColor =
-        selected ? QortDesignSystem.textPrimary : QortDesignSystem.textSecondary;
-    final labelColor =
-        selected ? QortDesignSystem.textPrimary : QortDesignSystem.textSecondary;
-    final accent = QortDesignSystem.modeAccent(currentMode);
+    final activeColor = selected ? accent : QortDesignSystem.textSecondary;
 
     return InkWell(
-      onTap: () => onTabSelected(item.index),
+      onTap: onTap ?? () => onTabSelected(item.index),
       borderRadius: BorderRadius.circular(QortDesignSystem.radiusSm),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
@@ -127,25 +147,14 @@ class QortBottomNav extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (item.useQIcon)
-              Text(
-                'Q',
-                style: TextStyle(
-                  color: selected ? accent : iconColor,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  height: 1,
-                ),
-              )
-            else
-              Icon(item.icon, color: iconColor, size: 22),
+            Icon(item.icon, color: activeColor, size: 22),
             const SizedBox(height: 4),
             Text(
               item.label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: labelColor,
+                color: activeColor,
                 fontSize: 11,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
               ),
@@ -161,12 +170,10 @@ class _NavItem {
   final int index;
   final IconData icon;
   final String label;
-  final bool useQIcon;
 
   const _NavItem({
     required this.index,
     required this.icon,
     required this.label,
-    this.useQIcon = false,
   });
 }

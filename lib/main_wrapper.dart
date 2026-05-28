@@ -55,6 +55,10 @@ class _MainWrapperState extends State<MainWrapper> {
 
   bool _isLoading = true;
   final List<Widget?> _tabCache = List.filled(4, null);
+  int _lastStackIndex = 0;
+
+  static const int _createTabIndex = 3;
+  static const int _profileTabIndex = 4;
 
   @override
   void initState() {
@@ -118,7 +122,7 @@ class _MainWrapperState extends State<MainWrapper> {
       1 => _buildPlayTab(),
       2 => FeedScreen(
           user: _user,
-          onOpenProfileTab: () => setState(() => _currentIndex = 3),
+          onOpenProfileTab: () => setState(() => _currentIndex = _profileTabIndex),
           onUserRefresh: _loadUserData,
         ),
       3 => ProfileScreen(
@@ -133,6 +137,38 @@ class _MainWrapperState extends State<MainWrapper> {
       _ => const SizedBox.shrink(),
     };
   }
+
+  int get _stackIndex {
+    if (_currentIndex == _createTabIndex) return _lastStackIndex;
+    if (_currentIndex == _profileTabIndex) return 3;
+    return _currentIndex;
+  }
+
+  void _onTabSelected(int index) {
+    if (index == _createTabIndex) {
+      setState(() => _currentIndex = _createTabIndex);
+      QortQuickActions.show(
+        context,
+        user: _user,
+        onRecordsChanged: _loadUserData,
+      ).whenComplete(() {
+        if (mounted) {
+          setState(() => _currentIndex = _tabIndexForStack(_lastStackIndex));
+        }
+      });
+      return;
+    }
+
+    setState(() {
+      _currentIndex = index;
+      _lastStackIndex = index == _profileTabIndex ? 3 : index;
+    });
+  }
+
+  int _tabIndexForStack(int stackIndex) =>
+      stackIndex == 3 ? _profileTabIndex : stackIndex;
+
+  void _onCreatePressed() => _onTabSelected(_createTabIndex);
 
   Color _accentForMode(AppMode mode) {
     switch (mode) {
@@ -214,9 +250,9 @@ class _MainWrapperState extends State<MainWrapper> {
           ),
           Expanded(
             child: IndexedStack(
-              index: _currentIndex,
+              index: _stackIndex,
               children: List.generate(4, (i) {
-                if (_tabCache[i] == null && i != _currentIndex) {
+                if (_tabCache[i] == null && i != _stackIndex) {
                   return const SizedBox.shrink();
                 }
                 return _screenAt(i);
@@ -228,12 +264,8 @@ class _MainWrapperState extends State<MainWrapper> {
       bottomNavigationBar: QortBottomNav(
         currentIndex: _currentIndex,
         currentMode: _currentMode,
-        onTabSelected: (i) => setState(() => _currentIndex = i),
-        onFabPressed: () => QortQuickActions.show(
-          context,
-          user: _user,
-          onRecordsChanged: _loadUserData,
-        ),
+        onTabSelected: _onTabSelected,
+        onCreatePressed: _onCreatePressed,
       ),
     );
   }
