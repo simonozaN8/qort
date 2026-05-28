@@ -19,7 +19,7 @@ BEGIN
     NEW.id,
     NEW.email,
     'Vartotojas',
-    0,
+    1000, -- welcome bonus XP
     0,
     false
   )
