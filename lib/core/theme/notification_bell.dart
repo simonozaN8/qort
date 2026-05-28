@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import '../../../../../../../../../core/theme/qort_colors.dart';
-
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../features/notifications/notifications_screen.dart';
+import 'qort_colors.dart';
 
 /// Globalus pranešimų varpelis - rodomas ekrano viršuje
 /// Periodiškai atsinaujina ir rodo nepatvirtintų pranešimų skaičių

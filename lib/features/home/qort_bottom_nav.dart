@@ -3,16 +3,14 @@ import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../core/constants/app_shell_layout.dart';
 import '../../core/theme/qort_design_system.dart';
-import '../../core/theme/qort_palette_extension.dart';
 import '../../features/profile/user_model.dart';
 
-/// Apatinė navigacija: Pagrindinis · Rungtynės · [+] · Pranešimai · Profilis.
+/// Apatinė navigacija: Pagrindinis · Rungtynės · [+] · Q (Feed) · Profilis.
 class QortBottomNav extends StatelessWidget {
   final int currentIndex;
   final AppMode currentMode;
   final ValueChanged<int> onTabSelected;
   final VoidCallback onFabPressed;
-  final int notificationBadge;
 
   const QortBottomNav({
     super.key,
@@ -20,19 +18,17 @@ class QortBottomNav extends StatelessWidget {
     required this.currentMode,
     required this.onTabSelected,
     required this.onFabPressed,
-    this.notificationBadge = 0,
   });
 
   static const _items = [
     _NavItem(index: 0, icon: LucideIcons.home, label: 'Pagrindinis'),
     _NavItem(index: 1, icon: LucideIcons.trophy, label: 'Rungtynės'),
-    _NavItem(index: 2, icon: LucideIcons.bell, label: 'Pranešimai'),
+    _NavItem(index: 2, icon: LucideIcons.rss, label: 'Feed', useQIcon: true),
     _NavItem(index: 3, icon: LucideIcons.user, label: 'Profilis'),
   ];
 
   @override
   Widget build(BuildContext context) {
-    final p = context.qortPalette;
     final fabAccent = QortDesignSystem.modeAccent(currentMode);
     const fabSize = 56.0;
     final bottomPad = MediaQuery.paddingOf(context).bottom;
@@ -115,6 +111,7 @@ class QortBottomNav extends StatelessWidget {
         selected ? QortDesignSystem.textPrimary : QortDesignSystem.textSecondary;
     final labelColor =
         selected ? QortDesignSystem.textPrimary : QortDesignSystem.textSecondary;
+    final accent = QortDesignSystem.modeAccent(currentMode);
 
     return InkWell(
       onTap: () => onTabSelected(item.index),
@@ -130,35 +127,18 @@ class QortBottomNav extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Icon(item.icon, color: iconColor, size: 22),
-                if (item.index == 2 && notificationBadge > 0)
-                  Positioned(
-                    right: -8,
-                    top: -4,
-                    child: Container(
-                      width: 16,
-                      height: 16,
-                      alignment: Alignment.center,
-                      decoration: const BoxDecoration(
-                        color: QortDesignSystem.error,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Text(
-                        notificationBadge > 9 ? '9+' : '$notificationBadge',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 8,
-                          fontWeight: FontWeight.bold,
-                          height: 1,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+            if (item.useQIcon)
+              Text(
+                'Q',
+                style: TextStyle(
+                  color: selected ? accent : iconColor,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  height: 1,
+                ),
+              )
+            else
+              Icon(item.icon, color: iconColor, size: 22),
             const SizedBox(height: 4),
             Text(
               item.label,
@@ -181,10 +161,12 @@ class _NavItem {
   final int index;
   final IconData icon;
   final String label;
+  final bool useQIcon;
 
   const _NavItem({
     required this.index,
     required this.icon,
     required this.label,
+    this.useQIcon = false,
   });
 }

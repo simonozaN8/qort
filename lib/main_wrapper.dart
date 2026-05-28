@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
+import 'core/theme/notification_bell.dart';
 import 'core/theme/qort_mode_colors.dart';
 import 'core/theme/qort_palette_extension.dart';
 import 'core/widgets/qort_logo.dart';
@@ -14,7 +13,7 @@ import 'features/home/qort_quick_actions.dart';
 import 'features/tournament/tournament_list_screen.dart';
 import 'features/blitz/blitz_screen.dart';
 import 'features/training/open_matches_screen.dart';
-import 'features/notifications/notifications_screen.dart';
+import 'features/home/feed_screen.dart';
 import 'features/home/inbox_screen.dart';
 import 'core/services/user_profile_loader.dart';
 
@@ -28,7 +27,6 @@ class MainWrapper extends StatefulWidget {
 class _MainWrapperState extends State<MainWrapper> {
   int _currentIndex = 0;
   AppMode _currentMode = AppMode.competition;
-  int _notificationBadge = 0;
 
   UserProfile _user = UserProfile(
     id: '',
@@ -62,7 +60,6 @@ class _MainWrapperState extends State<MainWrapper> {
   void initState() {
     super.initState();
     _loadUserData();
-    _loadNotificationBadge();
   }
 
   Future<void> _loadUserData() async {
@@ -73,6 +70,7 @@ class _MainWrapperState extends State<MainWrapper> {
           if (profile != null) _user = profile;
           _isLoading = false;
           _tabCache[0] = null;
+          _tabCache[2] = null;
           _tabCache[3] = null;
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -83,21 +81,6 @@ class _MainWrapperState extends State<MainWrapper> {
       debugPrint('Klaida užkraunant profilį: $e');
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  Future<void> _loadNotificationBadge() async {
-    try {
-      final uid = Supabase.instance.client.auth.currentUser?.id;
-      if (uid == null) return;
-      final res = await Supabase.instance.client
-          .from('team_invitations')
-          .select('id')
-          .eq('invitee_id', uid)
-          .eq('status', 'pending');
-      if (mounted) {
-        setState(() => _notificationBadge = (res as List).length);
-      }
-    } catch (_) {}
   }
 
   void _changeMode(AppMode mode) {
@@ -129,19 +112,21 @@ class _MainWrapperState extends State<MainWrapper> {
           onOpenQuickActions: () => QortQuickActions.show(
             context,
             user: _user,
-            onRecordsChanged: () {
-              _loadUserData();
-              _loadNotificationBadge();
-            },
+            onRecordsChanged: _loadUserData,
           ),
         ),
       1 => _buildPlayTab(),
-      2 => NotificationsScreen(currentMode: _currentMode),
+      2 => FeedScreen(
+          user: _user,
+          onOpenProfileTab: () => setState(() => _currentIndex = 3),
+          onUserRefresh: _loadUserData,
+        ),
       3 => ProfileScreen(
           user: _user,
           currentMode: _currentMode,
           onUserUpdate: (updatedUser) => setState(() {
             _user = updatedUser;
+            _tabCache[2] = null;
             _tabCache[3] = null;
           }),
         ),
@@ -210,6 +195,7 @@ class _MainWrapperState extends State<MainWrapper> {
                         ],
                       ),
                     ),
+                    NotificationBell(color: p.textSecondary),
                     IconButton(
                       tooltip: 'Žinutės',
                       onPressed: () => Navigator.push(
@@ -242,18 +228,11 @@ class _MainWrapperState extends State<MainWrapper> {
       bottomNavigationBar: QortBottomNav(
         currentIndex: _currentIndex,
         currentMode: _currentMode,
-        notificationBadge: _notificationBadge,
-        onTabSelected: (i) {
-          setState(() => _currentIndex = i);
-          if (i == 2) _loadNotificationBadge();
-        },
+        onTabSelected: (i) => setState(() => _currentIndex = i),
         onFabPressed: () => QortQuickActions.show(
           context,
           user: _user,
-          onRecordsChanged: () {
-            _loadUserData();
-            _loadNotificationBadge();
-          },
+          onRecordsChanged: _loadUserData,
         ),
       ),
     );
