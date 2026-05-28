@@ -1,0 +1,21 @@
+-- =============================================================================
+-- QORT: VISOS MIGRACIJOS
+-- Supabase SQL Editor NEPALAiko \ir – paleiskite po vieną failą:
+--
+--   migrations/20260521000001_functions.sql
+--   migrations/20260521000002_indexes.sql
+--   migrations/20260521000003_triggers.sql
+--   migrations/20260521000004_rls.sql
+--   migrations/20260521000005_cron.sql   (po pg_cron įjungimo)
+--   migrations/20260521000006_storage.sql (po bucket sukūrimo)
+--   migrations/20260521000007_performance.sql
+--   migrations/20260521000008_missing_columns.sql  (jei flutter run rodo 42703 klaidas)
+--   migrations/20260521000009_sports_catalog_phase1.sql
+--   seed_sports_catalog.sql  (po 9)
+--   migrations/20260521000010_tournament_team_registration.sql
+--   migrations/20260521000011_event_organizer_approval.sql
+--
+-- Arba naudokite Supabase CLI: supabase db push
+-- =============================================================================
+
+SELECT 'Paleiskite migrations/ failus eilės tvarka – žr. INSTRUKCIJOS.md' AS pranesimas;

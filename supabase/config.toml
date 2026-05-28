@@ -1,0 +1,17 @@
+# Supabase CLI konfigūracija (neprivaloma)
+# Diegimas: npm install -g supabase
+# Prisijungimas: supabase login
+# Link: supabase link --project-ref xrsewjtkxcudvxyxkpti
+
+project_id = "xrsewjtkxcudvxyxkpti"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15

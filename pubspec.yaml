@@ -1,0 +1,44 @@
+name: sporto_projektas
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.10.4 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Lokalizacijos modulis (Būtinas kalendoriui)
+  flutter_localizations:
+    sdk: flutter
+
+  # Kitos bibliotekos
+  google_fonts: ^6.2.1
+  lucide_icons: ^0.257.0  
+  image_picker: ^1.2.2
+  shared_preferences: ^2.2.3
+  cupertino_icons: ^1.0.8
+  
+  # --- PATAISYTA VERSIJA (Sprendžia tavo klaidą) ---
+  intl: ^0.20.2            
+  # -------------------------------------------------
+  
+  supabase_flutter: ^2.8.1 
+  timeago: ^3.7.1
+  cached_network_image: ^3.4.1
+  google_generative_ai: ^0.4.7
+  flutter_dotenv: ^5.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/qort_logo.png
+    - .env

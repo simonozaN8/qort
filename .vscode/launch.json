@@ -1,0 +1,17 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "QORT (DEV MODE)",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "debug",
+            "args": [
+                "--web-renderer", 
+                "html",
+                "--web-browser-flag",
+                "--disable-web-security"
+            ]
+        }
+    ]
+}
