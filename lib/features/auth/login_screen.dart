@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../core/theme/qort_palette.dart';
-import '../../core/theme/qort_palette_extension.dart';
-import '../../core/widgets/qort_ambient_background.dart';
-import '../../core/widgets/qort_logo.dart';
+
+import '../../core/theme/qort_design_system.dart';
 import 'auth_gate.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -19,6 +17,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passCtrl = TextEditingController();
   bool _isLoading = false;
   bool _isLogin = true;
+
+  static const _logoFontSize = 56.0;
 
   Future<void> _authenticate() async {
     setState(() => _isLoading = true);
@@ -59,96 +59,96 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.qortPalette;
-
     return Scaffold(
-      backgroundColor: p.background,
-      body: Stack(
-        children: [
-          QortAmbientBackground(palette: p),
-          SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const QortLogo(height: 52),
-                      const SizedBox(height: 10),
-                      Text(
-                        'Maži formatai. Didelė aistra.',
-                        style: GoogleFonts.inter(
-                          color: p.textSecondary,
-                          fontSize: 14,
-                          height: 1.4,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      Text(
-                        '1v1 · 2v2 · 3v3 · Tavo žaidimas.',
-                        style: GoogleFonts.inter(
-                          color: p.primary.withValues(alpha: 0.9),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 36),
-                      _inputField("El. paštas", _emailCtrl, false, p),
-                      const SizedBox(height: 14),
-                      _inputField("Slaptažodis", _passCtrl, true, p),
-                      const SizedBox(height: 28),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: ElevatedButton(
-                          onPressed: _isLoading ? null : _authenticate,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: p.primary,
-                            foregroundColor: Colors.white,
-                            elevation: p.isDark ? 8 : 0,
-                            shadowColor: p.primary.withValues(alpha: 0.45),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : Text(
-                                  _isLogin ? "PRISIJUNGTI" : "REGISTRUOTIS",
-                                  style: GoogleFonts.bebasNeue(
-                                    fontSize: 22,
-                                    letterSpacing: 1.2,
-                                  ),
-                                ),
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      TextButton(
-                        onPressed: () => setState(() => _isLogin = !_isLogin),
-                        child: Text(
-                          _isLogin
-                              ? "Neturi paskyros? Registruokis"
-                              : "Jau turi paskyrą? Prisijunk",
-                          style: TextStyle(color: p.textSecondary),
-                        ),
-                      ),
-                    ],
+      backgroundColor: QortDesignSystem.bgBase,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    'QORT',
+                    style: GoogleFonts.anton(
+                      fontSize: _logoFontSize,
+                      color: QortDesignSystem.competition,
+                      letterSpacing: _logoFontSize * 0.02,
+                      height: 1.0,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Žaisk. Fiksuok. Kilk.',
+                    style: GoogleFonts.anton(
+                      fontSize: 22,
+                      color: QortDesignSystem.textPrimary,
+                      height: 1.3,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 36),
+                  _inputField("El. paštas", _emailCtrl, false),
+                  const SizedBox(height: 14),
+                  _inputField("Slaptažodis", _passCtrl, true),
+                  const SizedBox(height: 28),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _authenticate,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: QortDesignSystem.competition,
+                        foregroundColor: Colors.black,
+                        disabledBackgroundColor:
+                            QortDesignSystem.competition.withValues(alpha: 0.5),
+                        disabledForegroundColor:
+                            Colors.black.withValues(alpha: 0.5),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius:
+                              BorderRadius.circular(QortDesignSystem.radiusMd),
+                        ),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.black,
+                              ),
+                            )
+                          : Text(
+                              _isLogin ? "PRISIJUNGTI" : "REGISTRUOTIS",
+                              style: GoogleFonts.bebasNeue(
+                                fontSize: 22,
+                                letterSpacing: 1.2,
+                                color: Colors.black,
+                              ),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  TextButton(
+                    onPressed: () => setState(() => _isLogin = !_isLogin),
+                    child: Text(
+                      _isLogin
+                          ? "Neturi paskyros? Registruokis"
+                          : "Jau turi paskyrą? Prisijunk",
+                      style: const TextStyle(
+                        color: QortDesignSystem.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -157,28 +157,33 @@ class _LoginScreenState extends State<LoginScreen> {
     String label,
     TextEditingController ctrl,
     bool isPass,
-    QortPalette p,
   ) {
     return TextField(
       controller: ctrl,
       obscureText: isPass,
-      style: TextStyle(color: p.textPrimary),
+      style: const TextStyle(color: QortDesignSystem.textPrimary),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: TextStyle(color: p.textSecondary),
+        labelStyle: const TextStyle(color: QortDesignSystem.textSecondary),
         filled: true,
-        fillColor: p.surfaceElevated,
+        fillColor: QortDesignSystem.bgElevated,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: p.border),
+          borderRadius:
+              BorderRadius.circular(QortDesignSystem.radiusMd),
+          borderSide: BorderSide(color: QortDesignSystem.borderDefault),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: p.border),
+          borderRadius:
+              BorderRadius.circular(QortDesignSystem.radiusMd),
+          borderSide: BorderSide(color: QortDesignSystem.borderDefault),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: p.primary, width: 1.5),
+          borderRadius:
+              BorderRadius.circular(QortDesignSystem.radiusMd),
+          borderSide: const BorderSide(
+            color: QortDesignSystem.competition,
+            width: 1.5,
+          ),
         ),
       ),
     );
