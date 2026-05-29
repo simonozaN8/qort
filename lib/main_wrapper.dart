@@ -17,6 +17,8 @@ import 'features/home/feed_screen.dart';
 import 'features/home/inbox_screen.dart';
 import 'core/services/user_profile_loader.dart';
 
+enum _HeaderModeLabelStyle { iconOnly, short, full }
+
 class MainWrapper extends StatefulWidget {
   const MainWrapper({super.key});
 
@@ -194,6 +196,13 @@ class _MainWrapperState extends State<MainWrapper> {
     }
 
     final p = context.qortPalette;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final labelStyle = _labelStyleForWidth(screenWidth);
+    final isCompactHeader = screenWidth < 600;
+    final headerPadding = isCompactHeader
+        ? const EdgeInsets.fromLTRB(12, 8, 4, 10)
+        : const EdgeInsets.fromLTRB(16, 8, 8, 10);
+    final pillGap = isCompactHeader ? 4.0 : 6.0;
 
     return Scaffold(
       backgroundColor: p.background,
@@ -215,7 +224,7 @@ class _MainWrapperState extends State<MainWrapper> {
                 ],
               ),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 8, 10),
+                padding: headerPadding,
                 child: Row(
                   children: [
                     const QortLogo(height: 30),
@@ -223,25 +232,61 @@ class _MainWrapperState extends State<MainWrapper> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          _modeBtn(context, AppMode.competition, LucideIcons.trophy, 'Varžybos'),
-                          const SizedBox(width: 6),
-                          _modeBtn(context, AppMode.training, LucideIcons.target, 'Treniruotės'),
-                          const SizedBox(width: 6),
-                          _modeBtn(context, AppMode.blitz, LucideIcons.zap, 'Blitz'),
+                          _modeBtn(
+                            context,
+                            AppMode.competition,
+                            LucideIcons.trophy,
+                            labelStyle,
+                          ),
+                          SizedBox(width: pillGap),
+                          _modeBtn(
+                            context,
+                            AppMode.training,
+                            LucideIcons.target,
+                            labelStyle,
+                          ),
+                          SizedBox(width: pillGap),
+                          _modeBtn(
+                            context,
+                            AppMode.blitz,
+                            LucideIcons.zap,
+                            labelStyle,
+                          ),
                         ],
                       ),
                     ),
-                    NotificationBell(color: p.textSecondary),
-                    IconButton(
-                      tooltip: 'Žinutės',
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const InboxScreen()),
-                      ),
-                      icon: Icon(
-                        LucideIcons.messageSquare,
-                        color: p.textSecondary,
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        NotificationBell(
+                          color: p.textSecondary,
+                          iconSize: isCompactHeader ? 20 : 22,
+                        ),
+                        IconButton(
+                          tooltip: 'Žinutės',
+                          visualDensity: isCompactHeader
+                              ? VisualDensity.compact
+                              : VisualDensity.standard,
+                          constraints: isCompactHeader
+                              ? const BoxConstraints(
+                                  minWidth: 40,
+                                  minHeight: 40,
+                                )
+                              : null,
+                          padding: isCompactHeader ? EdgeInsets.zero : null,
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const InboxScreen(),
+                            ),
+                          ),
+                          icon: Icon(
+                            LucideIcons.messageSquare,
+                            color: p.textSecondary,
+                            size: isCompactHeader ? 20 : 24,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -270,16 +315,44 @@ class _MainWrapperState extends State<MainWrapper> {
     );
   }
 
-  Widget _modeBtn(BuildContext context, AppMode mode, IconData icon, String label) {
+  _HeaderModeLabelStyle _labelStyleForWidth(double width) {
+    if (width < 400) return _HeaderModeLabelStyle.iconOnly;
+    if (width < 440) return _HeaderModeLabelStyle.short;
+    return _HeaderModeLabelStyle.full;
+  }
+
+  String? _modeLabel(AppMode mode, _HeaderModeLabelStyle style) {
+    if (style == _HeaderModeLabelStyle.iconOnly) return null;
+    switch (mode) {
+      case AppMode.competition:
+        return style == _HeaderModeLabelStyle.short ? 'Varž.' : 'Varžybos';
+      case AppMode.training:
+        return style == _HeaderModeLabelStyle.short ? 'Trenir.' : 'Treniruotės';
+      case AppMode.blitz:
+        return 'Blitz';
+    }
+  }
+
+  Widget _modeBtn(
+    BuildContext context,
+    AppMode mode,
+    IconData icon,
+    _HeaderModeLabelStyle labelStyle,
+  ) {
     final isSelected = _currentMode == mode;
     final accent = _accentForMode(mode);
     final p = context.qortPalette;
+    final label = _modeLabel(mode, labelStyle);
+    final iconOnly = labelStyle == _HeaderModeLabelStyle.iconOnly;
 
     return GestureDetector(
       onTap: () => _changeMode(mode),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        padding: EdgeInsets.symmetric(
+          horizontal: iconOnly ? 8 : 10,
+          vertical: 7,
+        ),
         decoration: BoxDecoration(
           color: isSelected ? accent : p.background,
           borderRadius: BorderRadius.circular(20),
@@ -292,18 +365,20 @@ class _MainWrapperState extends State<MainWrapper> {
           children: [
             Icon(
               icon,
-              size: 13,
+              size: iconOnly ? 14 : 13,
               color: isSelected ? Colors.white : p.textSecondary,
             ),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.w600,
-                color: isSelected ? Colors.white : p.textSecondary,
+            if (label != null) ...[
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w600,
+                  color: isSelected ? Colors.white : p.textSecondary,
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),

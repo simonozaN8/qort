@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../core/constants/app_shell_layout.dart';
@@ -121,13 +122,13 @@ class QortBottomNav extends StatelessWidget {
                       )
                     : BorderSide.none,
               ),
-              child: const Text(
+              child: Text(
                 'Q',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  height: 1,
+                style: GoogleFonts.anton(
+                  fontSize: 28,
+                  color: QortDesignSystem.textPrimary,
+                  letterSpacing: 28 * 0.02,
+                  height: 1.0,
                 ),
               ),
             ),
