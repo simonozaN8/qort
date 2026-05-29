@@ -323,8 +323,8 @@ class _TeamProfileScreenState extends State<TeamProfileScreen> {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                SportIcons.badge(_team!.sport, size: 32),
-                                const SizedBox(width: 8),
+                                SportIcons.icon(_team!.sport, size: 18),
+                                const SizedBox(width: 6),
                                 Text(
                                   _team!.sport,
                                   style: const TextStyle(
