@@ -5,7 +5,10 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'team_model.dart';
 import '../../core/constants/query_limits.dart';
+import '../../core/models/sport_catalog_entry.dart';
+import '../../core/services/sports_catalog_service.dart';
 import '../../core/services/team_name_service.dart';
+import '../../core/utils/sport_levels.dart';
 import '../../core/utils/team_naming_rules.dart';
 import '../profile/user_picker_field.dart';
 
@@ -20,6 +23,7 @@ class TeamProfileScreen extends StatefulWidget {
 class _TeamProfileScreenState extends State<TeamProfileScreen> {
   bool _isLoading = true;
   Team? _team;
+  SportCatalogEntry? _sportEntry;
   List<TeamMember> _members = [];
   bool _hasChanges = false;
   String? _myUserId;
@@ -90,10 +94,14 @@ class _TeamProfileScreenState extends State<TeamProfileScreen> {
       }
 
       teamResp['members'] = membersResp;
+      final sportEntry = await SportsCatalogService.byName(
+        teamResp['sport']?.toString() ?? '',
+      );
 
       if (mounted) {
         setState(() {
           _team = Team.fromJson(teamResp);
+          _sportEntry = sportEntry;
           _members = memberList;
           _isLoading = false;
         });
@@ -353,7 +361,7 @@ class _TeamProfileScreenState extends State<TeamProfileScreen> {
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
-                              "Lygis ${_team!.level}",
+                              SportLevels.nameFor(_sportEntry, _team!.level),
                               style: const TextStyle(
                                 color: Colors.orange,
                                 fontSize: 12,
@@ -552,7 +560,7 @@ class _TeamProfileScreenState extends State<TeamProfileScreen> {
                     ],
                   ),
                   Text(
-                    "Lygis ${m.level}",
+                    SportLevels.nameFor(_sportEntry, m.level),
                     style: const TextStyle(color: Colors.grey, fontSize: 11),
                   ),
                 ],

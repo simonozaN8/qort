@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
-import '../../../../../../../../../core/theme/qort_colors.dart';
-
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/models/sport_catalog_entry.dart';
+import '../../core/services/sports_catalog_service.dart';
 import '../../core/services/user_profile_loader.dart';
+import '../../core/theme/qort_colors.dart';
+import '../../core/utils/sport_levels.dart';
 import '../profile/user_model.dart';
 import '../profile/status_avatar.dart';
 
@@ -19,6 +21,7 @@ class SparringRadarScreen extends StatefulWidget {
 class _SparringRadarScreenState extends State<SparringRadarScreen> {
   List<UserProfile> _partners = [];
   bool _isLoading = true;
+  Map<String, SportCatalogEntry> _catalogBySport = {};
   final PageController _pageController = PageController();
 
   @override
@@ -36,14 +39,20 @@ class _SparringRadarScreenState extends State<SparringRadarScreen> {
   Future<void> _fetchPartners() async {
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
     try {
-      final partners = await UserProfileLoader.loadDiscoverProfiles(
-        excludeUserId: currentUserId ?? '',
-        limit: 15,
-      );
+      final results = await Future.wait([
+        UserProfileLoader.loadDiscoverProfiles(
+          excludeUserId: currentUserId ?? '',
+          limit: 15,
+        ),
+        SportsCatalogService.fetchActive(),
+      ]);
+      final partners = results[0] as List<UserProfile>;
+      final catalogEntries = results[1] as List<SportCatalogEntry>;
 
       if (mounted) {
         setState(() {
           _partners = partners;
+          _catalogBySport = {for (final e in catalogEntries) e.name: e};
           _isLoading = false;
         });
       }
@@ -123,13 +132,12 @@ class _SparringRadarScreenState extends State<SparringRadarScreen> {
         itemBuilder: (context, index) {
           final user = _partners[index];
 
-          final sportLevel = user.sportsList.isNotEmpty
-              ? user.sportsList.first.level.toString()
-              : "1";
-
           final sportName = user.sportsList.isNotEmpty
               ? user.sportsList.first.name
               : "Sportas";
+          final sportLevel = user.sportsList.isNotEmpty
+              ? user.sportsList.first.level
+              : 1;
 
           return Stack(
             fit: StackFit.expand,
@@ -189,7 +197,7 @@ class _SparringRadarScreenState extends State<SparringRadarScreen> {
                                   border: Border.all(color: Colors.orange),
                                 ),
                                 child: Text(
-                                  "${sportName.toUpperCase()} • LYGIS $sportLevel",
+                                  "${sportName.toUpperCase()} • ${SportLevels.nameFor(_catalogBySport[sportName], sportLevel).toUpperCase()}",
                                   style: const TextStyle(
                                     color: Colors.orange,
                                     fontWeight: FontWeight.bold,

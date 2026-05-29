@@ -41,17 +41,30 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
   bool _isLoading = true;
   List<dynamic> _notices = [];
   String _searchCity = "";
+  Map<String, SportCatalogEntry> _catalogBySport = {};
 
   @override
   void initState() {
     super.initState();
     _searchCity = widget.user.city;
     _fetchNotices();
+    _loadCatalog();
     if (widget.openCreateDialog) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _showCreateNoticeDialog();
       });
     }
+  }
+
+  Future<void> _loadCatalog() async {
+    try {
+      final entries = await SportsCatalogService.fetchActive();
+      if (mounted) {
+        setState(() {
+          _catalogBySport = {for (final e in entries) e.name: e};
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _fetchNotices() async {
@@ -887,6 +900,10 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
                         final bool isTeam = notice['is_team'] ?? false;
 
                         // Saugus duomenų traukimas
+                        final sportName = notice['sport']?.toString() ?? '';
+                        final entry = _catalogBySport[sportName];
+                        final authorLevel =
+                            (notice['level'] as num?)?.toInt() ?? 1;
                         final int minLvl = notice['min_level'] ?? 1;
                         final int maxLvl = notice['max_level'] ?? 5;
                         final String price = notice['court_price'] ?? "";
@@ -930,7 +947,7 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
                                             ),
                                           ),
                                           Text(
-                                            "Autoriaus Lygis: ${notice['level']}",
+                                            "Autoriaus lygis: ${SportLevels.nameFor(entry, authorLevel)}",
                                             style: const TextStyle(
                                               color: QortColors.textSecondary,
                                               fontSize: 10,
@@ -1000,7 +1017,7 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
                                     ),
                                   ),
                                   Text(
-                                    "IEŠKO LYGIO: $minLvl - $maxLvl",
+                                    "Ieškoma: ${SportLevels.rangeLabel(entry, minLvl, maxLvl)}",
                                     style: const TextStyle(
                                       color: Colors.orange,
                                       fontSize: 12,

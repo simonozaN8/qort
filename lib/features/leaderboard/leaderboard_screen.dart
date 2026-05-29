@@ -360,7 +360,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                         ),
                       ),
                       child: Text(
-                        "Lygis $lvl",
+                        SportLevels.nameFor(_catalogBySport[_selectedSport], lvl),
                         style: TextStyle(
                           color: isSel ? Colors.black : Colors.grey,
                           fontWeight: FontWeight.bold,

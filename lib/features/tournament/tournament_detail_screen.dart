@@ -231,11 +231,11 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
                   String errorMsg = "";
                   if (_myLevelInThisSport < minLvl) {
                     errorMsg =
-                        "Tavo lygis per žemas šiai kategorijai (Min: $minLvl)";
+                        "Tavo lygis per žemas šiai kategorijai (Min: ${SportLevels.nameFor(_sportCatalogEntry, minLvl)})";
                   }
                   if (_myLevelInThisSport > maxLvl) {
                     errorMsg =
-                        "Tavo lygis per aukštas šiai kategorijai (Max: $maxLvl)";
+                        "Tavo lygis per aukštas šiai kategorijai (Max: ${SportLevels.nameFor(_sportCatalogEntry, maxLvl)})";
                   }
 
                   return Container(

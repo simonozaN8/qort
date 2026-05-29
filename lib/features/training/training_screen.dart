@@ -3,8 +3,11 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/models/sport_catalog_entry.dart';
+import '../../core/services/sports_catalog_service.dart';
 import '../../core/services/user_profile_loader.dart';
 import '../../core/theme/qort_colors.dart';
+import '../../core/utils/sport_levels.dart';
 import '../profile/user_model.dart';
 import '../profile/status_avatar.dart';
 import 'open_matches_screen.dart'; // PASTATYTAS NAUJAS IMPORTAS
@@ -20,6 +23,7 @@ class _TrainingScreenState extends State<TrainingScreen> {
   UserProfile? _user;
   bool _isLoading = true;
   String _selectedSportName = "";
+  Map<String, SportCatalogEntry> _catalogBySport = {};
 
   @override
   void initState() {
@@ -35,11 +39,17 @@ class _TrainingScreenState extends State<TrainingScreen> {
     }
 
     try {
-      final profile = await UserProfileLoader.loadById(session.user.id);
+      final results = await Future.wait([
+        UserProfileLoader.loadById(session.user.id),
+        SportsCatalogService.fetchActive(),
+      ]);
+      final profile = results[0] as UserProfile?;
+      final catalogEntries = results[1] as List<SportCatalogEntry>;
 
       if (mounted) {
         setState(() {
           _user = profile;
+          _catalogBySport = {for (final e in catalogEntries) e.name: e};
           if (_user != null && _user!.sportsList.isNotEmpty) {
             _selectedSportName = _user!.sportsList.first.name;
           }
@@ -297,7 +307,10 @@ class _TrainingScreenState extends State<TrainingScreen> {
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
-                              "LYGIS ${currentSport.level}",
+                              SportLevels.nameFor(
+                                _catalogBySport[currentSport.name],
+                                currentSport.level,
+                              ).toUpperCase(),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 9,

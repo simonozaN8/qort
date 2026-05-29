@@ -6,8 +6,10 @@ import 'team_model.dart';
 import 'create_team_screen.dart';
 import 'team_profile_screen.dart';
 import '../../core/constants/query_limits.dart';
+import '../../core/models/sport_catalog_entry.dart';
+import '../../core/services/sports_catalog_service.dart';
 import '../../core/theme/qort_colors.dart';
-import '../../core/theme/qort_theme.dart';
+import '../../core/utils/sport_levels.dart';
 import 'team_invitations_screen.dart';
 
 class MyTeamsScreen extends StatefulWidget {
@@ -21,6 +23,7 @@ class _MyTeamsScreenState extends State<MyTeamsScreen> {
   bool _isLoading = true;
   List<Team> _teams = [];
   int _pendingInvitations = 0;
+  Map<String, SportCatalogEntry> _catalogBySport = {};
 
   @override
   void initState() {
@@ -53,6 +56,8 @@ class _MyTeamsScreenState extends State<MyTeamsScreen> {
             .eq('invited_user_id', myId)
             .eq('status', 'pending'),
       ]);
+      final catalogEntries = await SportsCatalogService.fetchActive();
+      _catalogBySport = {for (final e in catalogEntries) e.name: e};
 
       final membershipRows = results[0] as List;
       final teamIds = membershipRows
@@ -347,7 +352,10 @@ class _MyTeamsScreenState extends State<MyTeamsScreen> {
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
-                            "Lygis ${team.level}",
+                            SportLevels.nameFor(
+                              _catalogBySport[team.sport],
+                              team.level,
+                            ),
                             style: const TextStyle(
                               color: Colors.orange,
                               fontSize: 11,
