@@ -37,10 +37,10 @@ class QortBottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     final accent = QortDesignSystem.modeAccent(currentMode);
     const fabSize = 56.0;
-    final bottomPad = MediaQuery.paddingOf(context).bottom;
+    final bottomInset = AppShellLayout.bottomSafeInset(context);
     final height = AppShellLayout.bottomNavBarHeight +
         AppShellLayout.fabOverlap +
-        bottomPad;
+        bottomInset;
     final feedSelected = currentIndex == _feedIndex;
 
     return SizedBox(
@@ -56,7 +56,9 @@ class QortBottomNav extends StatelessWidget {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 color: QortDesignSystem.bgSurface,
-                border: Border(top: BorderSide(color: QortDesignSystem.borderSubtle)),
+                border: Border(
+                  top: BorderSide(color: QortDesignSystem.borderSubtle),
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.35),
@@ -65,34 +67,42 @@ class QortBottomNav extends StatelessWidget {
                   ),
                 ],
               ),
-              child: SafeArea(
-                top: false,
-                child: SizedBox(
-                  height: AppShellLayout.bottomNavBarHeight,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            _tab(context, _leftItems[0], accent),
-                            _tab(context, _leftItems[1], accent),
-                          ],
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    height: AppShellLayout.bottomNavBarHeight,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _tab(context, _leftItems[0], accent),
+                              _tab(context, _leftItems[1], accent),
+                            ],
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: fabSize + 8),
-                      Expanded(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            _tab(context, _rightItems[0], accent, onTap: onCreatePressed),
-                            _tab(context, _rightItems[1], accent),
-                          ],
+                        const SizedBox(width: fabSize + 8),
+                        Expanded(
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _tab(
+                                context,
+                                _rightItems[0],
+                                accent,
+                                onTap: onCreatePressed,
+                              ),
+                              _tab(context, _rightItems[1], accent),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
+                  SizedBox(height: bottomInset),
+                ],
               ),
             ),
           ),
@@ -105,7 +115,10 @@ class QortBottomNav extends StatelessWidget {
               highlightElevation: feedSelected ? 12 : 8,
               shape: CircleBorder(
                 side: feedSelected
-                    ? BorderSide(color: Colors.white.withValues(alpha: 0.35), width: 2)
+                    ? BorderSide(
+                        color: Colors.white.withValues(alpha: 0.35),
+                        width: 2,
+                      )
                     : BorderSide.none,
               ),
               child: const Text(

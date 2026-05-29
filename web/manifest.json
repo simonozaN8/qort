@@ -1,11 +1,12 @@
 {
-    "name": "sporto_projektas",
-    "short_name": "sporto_projektas",
-    "start_url": ".",
+    "name": "QORT",
+    "short_name": "QORT",
+    "start_url": "/",
+    "scope": "/",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#09090B",
+    "theme_color": "#EAB308",
+    "description": "QORT — sporto app",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
