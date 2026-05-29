@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons/lucide_icons.dart';
+import 'package:material_design_icons_flutter/material_design_icons_flutter.dart';
 
 /// Sporto šakos vizualinis identitetas — spalva + atpažįstama ikona.
 enum SportVisualKind {
@@ -13,10 +13,14 @@ enum SportVisualKind {
   football,
   volleyball,
   beach,
+  beachTennis,
   handball,
   darts,
   bowling,
   billiards,
+  pool,
+  chess,
+  ultimateFrisbee,
   paintball,
   generic,
 }
@@ -37,7 +41,7 @@ class SportVisualSpec {
   });
 }
 
-/// Vaizdinės sporto ikonos — ne abstraktūs Lucide simboliai.
+/// Vaizdinės sporto ikonos — MDI specifiniai sporto simboliai.
 class SportVisualIcon {
   SportVisualIcon._();
 
@@ -115,24 +119,38 @@ class SportVisualIcon {
   static SportVisualSpec _bySportName(String name) {
     final n = name.trim().toLowerCase();
 
-    if (n.contains('tenis') && !n.contains('stalo')) return _tennis;
+    if (n.contains('beach tennis') ||
+        (n.contains('paplūdim') && n.contains('tenis'))) {
+      return _beachTennis;
+    }
+    if (n.contains('stalo tenis')) return _tableTennis;
+    if (n.contains('tenis')) return _tennis;
     if (n.contains('padel')) return _padel;
     if (n.contains('pickle') || n.contains('pikl') || n.contains('pikli')) {
       return _pickleball;
     }
     if (n.contains('badminton')) return _badminton;
     if (n.contains('skvoš') || n.contains('squash')) return _squash;
-    if (n.contains('stalo tenis')) return _tableTennis;
     if (n.contains('krepšin') || n.contains('basketball')) return _basketball;
     if (n.contains('futbol') || n.contains('football') || n.contains('soccer')) {
       return _football;
     }
-    if (n.contains('paplūdim') || n.contains('beach')) return _beach;
+    if (n.contains('paplūdim') ||
+        n.contains('beach volley') ||
+        (n.contains('beach') && n.contains('tinklin'))) {
+      return _beach;
+    }
     if (n.contains('tinklin') || n.contains('volley')) return _volleyball;
     if (n.contains('smigin') || n.contains('dart')) return _darts;
     if (n.contains('bouling') || n.contains('bowl')) return _bowling;
-    if (n.contains('biliard') || n.contains('pool') || n.contains('snuker')) {
-      return _billiards;
+    if (n.contains('snuker') || n.contains('snooker')) return _billiards;
+    if (n.contains('pool')) return _pool;
+    if (n.contains('biliard')) return _billiards;
+    if (n.contains('šachmat') || n.contains('chess')) return _chess;
+    if (n.contains('frisbee') ||
+        n.contains('ultimate frisbee') ||
+        n.contains('ultimat')) {
+      return _ultimateFrisbee;
     }
     if (n.contains('dažasvy') || n.contains('paintball')) return _paintball;
     if (n.contains('rankin') || n.contains('handball')) return _handball;
@@ -141,129 +159,161 @@ class SportVisualIcon {
     return _generic;
   }
 
-  static const _tennis = SportVisualSpec(
+  static final _tennis = SportVisualSpec(
     kind: SportVisualKind.tennis,
-    icon: Icons.sports_tennis,
+    icon: MdiIcons.tennis,
     primary: Color(0xFF84CC16),
     secondary: Color(0xFFECFCCB),
     emoji: '🎾',
   );
 
-  static const _padel = SportVisualSpec(
+  static final _padel = SportVisualSpec(
     kind: SportVisualKind.padel,
-    icon: Icons.sports_tennis,
+    icon: MdiIcons.racquetball,
     primary: Color(0xFF0EA5E9),
     secondary: Color(0xFFE0F2FE),
     emoji: '🏸',
   );
 
-  static const _pickleball = SportVisualSpec(
+  static final _pickleball = SportVisualSpec(
     kind: SportVisualKind.pickleball,
-    icon: Icons.sports_baseball,
+    icon: MdiIcons.tableTennis,
     primary: Color(0xFFF59E0B),
     secondary: Color(0xFFFEF3C7),
     emoji: '🏓',
   );
 
-  static const _badminton = SportVisualSpec(
+  static final _badminton = SportVisualSpec(
     kind: SportVisualKind.badminton,
-    icon: Icons.sports_martial_arts,
+    icon: MdiIcons.badminton,
     primary: Color(0xFFEAB308),
     secondary: Color(0xFFFEF9C3),
     emoji: '🏸',
   );
 
-  static const _squash = SportVisualSpec(
+  static final _squash = SportVisualSpec(
     kind: SportVisualKind.squash,
-    icon: Icons.sports_tennis,
+    icon: MdiIcons.tennisBall,
     primary: Color(0xFFEF4444),
     secondary: Color(0xFFFEE2E2),
     emoji: '🎯',
   );
 
-  static const _tableTennis = SportVisualSpec(
+  static final _tableTennis = SportVisualSpec(
     kind: SportVisualKind.tableTennis,
-    icon: Icons.sports_esports,
+    icon: MdiIcons.tableTennis,
     primary: Color(0xFF6366F1),
     secondary: Color(0xFFE0E7FF),
     emoji: '🏓',
   );
 
-  static const _basketball = SportVisualSpec(
+  static final _basketball = SportVisualSpec(
     kind: SportVisualKind.basketball,
-    icon: Icons.sports_basketball,
+    icon: MdiIcons.basketball,
     primary: Color(0xFFF97316),
     secondary: Color(0xFFFFEDD5),
     emoji: '🏀',
   );
 
-  static const _football = SportVisualSpec(
+  static final _football = SportVisualSpec(
     kind: SportVisualKind.football,
-    icon: Icons.sports_soccer,
+    icon: MdiIcons.soccer,
     primary: Color(0xFF22C55E),
     secondary: Color(0xFFDCFCE7),
     emoji: '⚽',
   );
 
-  static const _volleyball = SportVisualSpec(
+  static final _volleyball = SportVisualSpec(
     kind: SportVisualKind.volleyball,
-    icon: Icons.sports_volleyball,
+    icon: MdiIcons.volleyball,
     primary: Color(0xFF3B82F6),
     secondary: Color(0xFFDBEAFE),
     emoji: '🏐',
   );
 
-  static const _beach = SportVisualSpec(
+  static final _beach = SportVisualSpec(
     kind: SportVisualKind.beach,
-    icon: Icons.sports_volleyball,
+    icon: MdiIcons.volleyball,
     primary: Color(0xFFFBBF24),
     secondary: Color(0xFFFEF3C7),
     emoji: '🏖️',
   );
 
-  static const _handball = SportVisualSpec(
+  static final _beachTennis = SportVisualSpec(
+    kind: SportVisualKind.beachTennis,
+    icon: MdiIcons.tennis,
+    primary: Color(0xFFF59E0B),
+    secondary: Color(0xFFFEF3C7),
+    emoji: '🎾',
+  );
+
+  static final _handball = SportVisualSpec(
     kind: SportVisualKind.handball,
-    icon: Icons.sports_handball,
+    icon: MdiIcons.handball,
     primary: Color(0xFF8B5CF6),
     secondary: Color(0xFFEDE9FE),
     emoji: '🤾',
   );
 
-  static const _darts = SportVisualSpec(
+  static final _darts = SportVisualSpec(
     kind: SportVisualKind.darts,
-    icon: Icons.adjust,
+    icon: MdiIcons.bullseyeArrow,
     primary: Color(0xFFDC2626),
     secondary: Color(0xFFFEE2E2),
     emoji: '🎯',
   );
 
-  static const _bowling = SportVisualSpec(
+  static final _bowling = SportVisualSpec(
     kind: SportVisualKind.bowling,
-    icon: Icons.sports,
+    icon: MdiIcons.bowling,
     primary: Color(0xFF78716C),
     secondary: Color(0xFFF5F5F4),
     emoji: '🎳',
   );
 
-  static const _billiards = SportVisualSpec(
+  static final _billiards = SportVisualSpec(
     kind: SportVisualKind.billiards,
-    icon: Icons.circle,
+    icon: MdiIcons.billiards,
     primary: Color(0xFF059669),
     secondary: Color(0xFFD1FAE5),
     emoji: '🎱',
   );
 
-  static const _paintball = SportVisualSpec(
+  static final _pool = SportVisualSpec(
+    kind: SportVisualKind.pool,
+    icon: MdiIcons.billiardsRack,
+    primary: Color(0xFF047857),
+    secondary: Color(0xFFD1FAE5),
+    emoji: '🎱',
+  );
+
+  static final _chess = SportVisualSpec(
+    kind: SportVisualKind.chess,
+    icon: MdiIcons.chessKnight,
+    primary: Color(0xFF475569),
+    secondary: Color(0xFFF1F5F9),
+    emoji: '♟️',
+  );
+
+  static final _ultimateFrisbee = SportVisualSpec(
+    kind: SportVisualKind.ultimateFrisbee,
+    icon: MdiIcons.disc,
+    primary: Color(0xFF06B6D4),
+    secondary: Color(0xFFCFFAFE),
+    emoji: '🥏',
+  );
+
+  static final _paintball = SportVisualSpec(
     kind: SportVisualKind.paintball,
-    icon: Icons.water_drop,
+    icon: MdiIcons.target,
     primary: Color(0xFFEC4899),
     secondary: Color(0xFFFCE7F3),
     emoji: '💥',
   );
 
-  static const _generic = SportVisualSpec(
+  static final _generic = SportVisualSpec(
     kind: SportVisualKind.generic,
-    icon: LucideIcons.medal,
+    icon: MdiIcons.medal,
     primary: Color(0xFF64748B),
     secondary: Color(0xFFF1F5F9),
     emoji: '🏅',
