@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:typed_data';
 import 'package:image_picker/image_picker.dart';
 import '../../core/services/team_name_service.dart';
+import '../../core/utils/sport_icons.dart';
 import '../../core/utils/team_naming_rules.dart';
 import 'team_formats.dart';
 
@@ -455,10 +456,12 @@ class _CreateTeamScreenState extends State<CreateTeamScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      LucideIcons.trophy,
-                      color: isSelected ? accentColor : QortColors.textSecondary,
-                      size: 14,
+                    SportIcons.icon(
+                      sport['sport'],
+                      size: 18,
+                      color: isSelected
+                          ? accentColor
+                          : QortColors.textSecondary,
                     ),
                     const SizedBox(width: 6),
                     Text(

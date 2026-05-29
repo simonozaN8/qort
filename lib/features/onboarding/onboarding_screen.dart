@@ -5,6 +5,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/services/sports_catalog_service.dart';
+import '../../core/utils/sport_icons.dart';
 import '../../main_wrapper.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -324,13 +325,24 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     color: isSelected ? accentColor : QortColors.border,
                   ),
                 ),
-                child: Text(
-                  name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 15,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SportIcons.icon(
+                      name,
+                      size: 18,
+                      color: isSelected ? Colors.white : null,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             );
@@ -375,13 +387,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Sporto pavadinimas
-                Text(
-                  sportName.toUpperCase(),
-                  style: GoogleFonts.bebasNeue(
-                    fontSize: 22,
-                    color: accentColor,
-                    letterSpacing: 2,
-                  ),
+                Row(
+                  children: [
+                    SportIcons.icon(sportName, size: 20, color: accentColor),
+                    const SizedBox(width: 8),
+                    Text(
+                      sportName.toUpperCase(),
+                      style: GoogleFonts.bebasNeue(
+                        fontSize: 22,
+                        color: accentColor,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
 

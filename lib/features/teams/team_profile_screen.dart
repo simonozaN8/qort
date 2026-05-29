@@ -8,6 +8,7 @@ import '../../core/constants/query_limits.dart';
 import '../../core/models/sport_catalog_entry.dart';
 import '../../core/services/sports_catalog_service.dart';
 import '../../core/services/team_name_service.dart';
+import '../../core/utils/sport_icons.dart';
 import '../../core/utils/sport_levels.dart';
 import '../../core/utils/team_naming_rules.dart';
 import '../profile/user_picker_field.dart';
@@ -319,12 +320,19 @@ class _TeamProfileScreenState extends State<TeamProfileScreen> {
                               color: QortColors.border,
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: Text(
-                              _team!.sport,
-                              style: const TextStyle(
-                                color: QortColors.textSecondary,
-                                fontSize: 12,
-                              ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SportIcons.badge(_team!.sport, size: 32),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _team!.sport,
+                                  style: const TextStyle(
+                                    color: QortColors.textSecondary,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                           // Formatas (NAUJAS)

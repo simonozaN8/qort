@@ -3,6 +3,7 @@ import '../../core/theme/qort_colors.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/services/sports_catalog_service.dart';
+import '../../core/utils/sport_icons.dart';
 import '../../core/utils/sport_levels.dart';
 
 class AddSportScreen extends StatefulWidget {
@@ -271,12 +272,23 @@ class _AddSportScreenState extends State<AddSportScreen> {
           color: isSel ? Colors.blue : QortColors.surface,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: Text(
-          sport['name'],
-          style: TextStyle(
-            color: isSel ? Colors.white : Colors.grey,
-            fontWeight: FontWeight.bold,
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SportIcons.icon(
+              sport['name'],
+              size: 22,
+              color: isSel ? Colors.white : Colors.grey,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              sport['name'],
+              style: TextStyle(
+                color: isSel ? Colors.white : Colors.grey,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ),
       ),
     );

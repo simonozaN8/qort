@@ -9,6 +9,7 @@ import '../../core/constants/query_limits.dart';
 import '../../core/models/sport_catalog_entry.dart';
 import '../../core/services/sports_catalog_service.dart';
 import '../../core/theme/qort_colors.dart';
+import '../../core/utils/sport_icons.dart';
 import '../../core/utils/sport_levels.dart';
 import 'team_invitations_screen.dart';
 
@@ -333,12 +334,23 @@ class _MyTeamsScreenState extends State<MyTeamsScreen> {
                             color: Colors.white10,
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: Text(
-                            team.sport,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 11,
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SportIcons.icon(
+                                team.sport,
+                                size: 14,
+                                color: Colors.white70,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                team.sport,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(width: 6),

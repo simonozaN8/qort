@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../core/constants/app_shell_layout.dart';
+import '../../core/utils/sport_icons.dart';
 import '../../core/services/feed_service.dart';
 import '../../core/theme/qort_design_system.dart';
 import '../../core/theme/qort_mode_colors.dart';
@@ -117,10 +118,24 @@ class FeedFriendActivitySection extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 4),
-                          Text(
-                            '${e.sport.isNotEmpty ? '${e.sport} · ' : ''}${_timeAgo(e.occurredAt)}',
-                            style: QortDesignSystem.caption,
-                          ),
+                          if (e.sport.isNotEmpty)
+                            Row(
+                              children: [
+                                SportIcons.icon(e.sport, size: 14),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    '${e.sport} · ${_timeAgo(e.occurredAt)}',
+                                    style: QortDesignSystem.caption,
+                                  ),
+                                ),
+                              ],
+                            )
+                          else
+                            Text(
+                              _timeAgo(e.occurredAt),
+                              style: QortDesignSystem.caption,
+                            ),
                         ],
                       ),
                     ),
@@ -221,10 +236,24 @@ class FeedOpenMatchesSection extends StatelessWidget {
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              Text(
-                                '$sport · $dateStr',
-                                style: QortDesignSystem.caption,
-                              ),
+                              if (sport.isNotEmpty)
+                                Row(
+                                  children: [
+                                    SportIcons.icon(sport, size: 14),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        '$sport · $dateStr',
+                                        style: QortDesignSystem.caption,
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              else
+                                Text(
+                                  dateStr,
+                                  style: QortDesignSystem.caption,
+                                ),
                               if (location.isNotEmpty)
                                 Text(
                                   location,
