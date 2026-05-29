@@ -27,10 +27,10 @@ class UserPickerField extends StatefulWidget {
   });
 
   @override
-  State<UserPickerField> createState() => _UserPickerFieldState();
+  State<UserPickerField> createState() => UserPickerFieldState();
 }
 
-class _UserPickerFieldState extends State<UserPickerField> {
+class UserPickerFieldState extends State<UserPickerField> {
   final _ctrl = TextEditingController();
   final _focusNode = FocusNode();
 
@@ -42,6 +42,13 @@ class _UserPickerFieldState extends State<UserPickerField> {
   String? _selectedUserId;
   String? _selectedDisplayName;
 
+  /// Priverstinai užfiksuoja įvestą tekstą kaip svečią (pvz. prieš formos validaciją).
+  /// Grąžina `(userId, displayName)` — displayName tuščias, jei nieko neužfiksuota.
+  (String? userId, String displayName) commitPendingText() {
+    _commitGuestIfNeeded();
+    return (_selectedUserId, _selectedDisplayName ?? '');
+  }
+
   @override
   void initState() {
     super.initState();
@@ -51,9 +58,16 @@ class _UserPickerFieldState extends State<UserPickerField> {
     }
     _focusNode.addListener(() {
       if (!_focusNode.hasFocus) {
-        // Kai laukas praranda fokusą - uždaryti dropdown po trumpos pauzės
+        final dropdownWasOpen = _showDropdown;
+        if (!dropdownWasOpen) {
+          _commitGuestIfNeeded();
+        }
         Future.delayed(const Duration(milliseconds: 200), () {
-          if (mounted) setState(() => _showDropdown = false);
+          if (!mounted) return;
+          if (!_focusNode.hasFocus && dropdownWasOpen) {
+            _commitGuestIfNeeded();
+          }
+          setState(() => _showDropdown = false);
         });
       }
     });
@@ -128,6 +142,21 @@ class _UserPickerFieldState extends State<UserPickerField> {
     }
   }
 
+  void _commitGuestIfNeeded() {
+    final name = _ctrl.text.trim();
+    if (name.length < 2) return;
+    if (_selectedUserId != null) return;
+    if (_selectedDisplayName == name) return;
+
+    setState(() {
+      _selectedUserId = null;
+      _selectedDisplayName = name;
+      _showDropdown = false;
+    });
+
+    widget.onUserSelected(null, name);
+  }
+
   void _selectQortUser(Map<String, dynamic> user) {
     final displayName = (user['nickname'] as String?)?.isNotEmpty == true
         ? user['nickname']
@@ -145,16 +174,7 @@ class _UserPickerFieldState extends State<UserPickerField> {
   }
 
   void _selectAsGuest() {
-    final guestName = _ctrl.text.trim();
-    if (guestName.isEmpty) return;
-
-    setState(() {
-      _selectedUserId = null;
-      _selectedDisplayName = guestName;
-      _showDropdown = false;
-    });
-
-    widget.onUserSelected(null, guestName);
+    _commitGuestIfNeeded();
     _focusNode.unfocus();
   }
 
@@ -166,6 +186,25 @@ class _UserPickerFieldState extends State<UserPickerField> {
       _searchResults = [];
       _showDropdown = false;
     });
+    widget.onUserSelected(null, '');
+  }
+
+  Icon _prefixIcon() {
+    if (_selectedUserId != null) {
+      return const Icon(
+        LucideIcons.userCheck,
+        color: Colors.green,
+        size: 20,
+      );
+    }
+    if (_selectedDisplayName != null && _selectedDisplayName!.isNotEmpty) {
+      return const Icon(
+        LucideIcons.user,
+        color: Colors.orange,
+        size: 20,
+      );
+    }
+    return const Icon(LucideIcons.search, color: Colors.grey, size: 20);
   }
 
   @override
@@ -189,7 +228,9 @@ class _UserPickerFieldState extends State<UserPickerField> {
         TextField(
           controller: _ctrl,
           focusNode: _focusNode,
+          textInputAction: TextInputAction.done,
           style: const TextStyle(color: Colors.white, fontSize: 15),
+          onSubmitted: (_) => _commitGuestIfNeeded(),
           onChanged: (value) {
             if (_selectedUserId != null && value != _selectedDisplayName) {
               // Vartotojas pradeda keisti pasirinktą - atšaukiame pasirinkimą
@@ -206,13 +247,7 @@ class _UserPickerFieldState extends State<UserPickerField> {
             filled: true,
             fillColor: QortColors.surface,
             contentPadding: const EdgeInsets.all(14),
-            prefixIcon: _selectedUserId != null
-                ? const Icon(
-                    LucideIcons.userCheck,
-                    color: Colors.green,
-                    size: 20,
-                  )
-                : const Icon(LucideIcons.search, color: Colors.grey, size: 20),
+            prefixIcon: _prefixIcon(),
             suffixIcon: _ctrl.text.isNotEmpty
                 ? IconButton(
                     icon: const Icon(
@@ -235,7 +270,9 @@ class _UserPickerFieldState extends State<UserPickerField> {
         ),
 
         // PASIRINKIMO STATUSAS (jei jau pasirinkta)
-        if (_selectedDisplayName != null && !_showDropdown) ...[
+        if (_selectedDisplayName != null &&
+            _selectedDisplayName!.isNotEmpty &&
+            !_showDropdown) ...[
           const SizedBox(height: 6),
           Row(
             children: [
@@ -248,14 +285,18 @@ class _UserPickerFieldState extends State<UserPickerField> {
               ),
               const SizedBox(width: 6),
               Text(
-                _selectedUserId != null
-                    ? "QORT vartotojas"
-                    : "Svečias (be paskyros)",
+                _selectedUserId != null ? "QORT žaidėjas" : "Svečias",
                 style: TextStyle(
                   color: _selectedUserId != null ? Colors.green : Colors.orange,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                LucideIcons.check,
+                size: 12,
+                color: _selectedUserId != null ? Colors.green : Colors.orange,
               ),
             ],
           ),

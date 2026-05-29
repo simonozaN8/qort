@@ -90,6 +90,10 @@ class _AddExternalRecordScreenState extends State<AddExternalRecordScreen> {
   // Notes
   final _notesCtrl = TextEditingController();
 
+  final _opponentPickerKey = GlobalKey<UserPickerFieldState>();
+  final _partnerPickerKey = GlobalKey<UserPickerFieldState>();
+  final _opponent2PickerKey = GlobalKey<UserPickerFieldState>();
+
   @override
   void initState() {
     super.initState();
@@ -270,7 +274,46 @@ class _AddExternalRecordScreenState extends State<AddExternalRecordScreen> {
     }
   }
 
+  void _commitPendingPickerText() {
+    if (_recordType != 'friendly') return;
+
+    if (_matchFormat == '1v1') {
+      _applyPickerCommit(_opponentPickerKey, (userId, name) {
+        _opponentUserId = userId;
+        _opponentName = name;
+      });
+    } else if (_matchFormat == '2v2') {
+      _applyPickerCommit(_partnerPickerKey, (userId, name) {
+        _partnerUserId = userId;
+        _partnerName = name;
+      });
+      _applyPickerCommit(_opponentPickerKey, (userId, name) {
+        _opponentUserId = userId;
+        _opponentName = name;
+      });
+      _applyPickerCommit(_opponent2PickerKey, (userId, name) {
+        _opponent2UserId = userId;
+        _opponent2Name = name;
+      });
+    }
+  }
+
+  void _applyPickerCommit(
+    GlobalKey<UserPickerFieldState> key,
+    void Function(String? userId, String name) apply,
+  ) {
+    final state = key.currentState;
+    if (state == null) return;
+
+    final (userId, name) = state.commitPendingText();
+    if (name.trim().isEmpty) return;
+
+    apply(userId, name.trim());
+  }
+
   Future<void> _save() async {
+    _commitPendingPickerText();
+
     // Validacija
     if (_selectedSport == null) {
       _showError("Pasirink sporto šaką");
@@ -927,7 +970,7 @@ class _AddExternalRecordScreenState extends State<AddExternalRecordScreen> {
             _placementOnly = v;
             if (v) _status = 'completed';
           }),
-          activeColor: accentColor,
+          activeThumbColor: accentColor,
           title: Text(
             'Tik galutinė vieta (be atskiro mačo)',
             style: TextStyle(color: p.textPrimary, fontSize: 13),
@@ -1195,6 +1238,7 @@ class _AddExternalRecordScreenState extends State<AddExternalRecordScreen> {
     // 1v1 - vienas varžovas
     if (_matchFormat == "1v1") {
       return UserPickerField(
+        key: _opponentPickerKey,
         label: "VARŽOVAS",
         hintText: "Įrašyk vardą arba slapyvardį",
         filterBySport: _selectedSport,
@@ -1213,6 +1257,7 @@ class _AddExternalRecordScreenState extends State<AddExternalRecordScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           UserPickerField(
+            key: _partnerPickerKey,
             label: "MANO PARTNERIS",
             hintText: "Įrašyk vardą arba slapyvardį",
             filterBySport: _selectedSport,
@@ -1225,6 +1270,7 @@ class _AddExternalRecordScreenState extends State<AddExternalRecordScreen> {
           ),
           const SizedBox(height: 16),
           UserPickerField(
+            key: _opponentPickerKey,
             label: "VARŽOVAS 1",
             hintText: "Įrašyk vardą arba slapyvardį",
             filterBySport: _selectedSport,
@@ -1237,6 +1283,7 @@ class _AddExternalRecordScreenState extends State<AddExternalRecordScreen> {
           ),
           const SizedBox(height: 16),
           UserPickerField(
+            key: _opponent2PickerKey,
             label: "VARŽOVAS 2",
             hintText: "Įrašyk vardą arba slapyvardį",
             filterBySport: _selectedSport,
