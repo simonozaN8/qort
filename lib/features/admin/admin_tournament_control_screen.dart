@@ -87,6 +87,31 @@ class _AdminTournamentControlScreenState
     return format;
   }
 
+  static const Map<String, String> _formatDescriptions = {
+    'Round Robin (Grupės)':
+        'Visi žaidžia prieš visus grupėse. Taškai už pergales — geriausi keliauja toliau.',
+    'Kvalifikacija (Single Elimination)':
+        'Atkrintamosios iki pagrindinio etapo. Laimėtojai patenka į kitą fazę, kiti iškrenta.',
+    'Single Elimination (Atkrintamosios)':
+        'Nugalėtojai lieka, pralaimėtojai iškrenta po vieno mačo.',
+    'Double Elimination (Dvigubo minuso)':
+        'Žaidėjas iškrenta po antro pralaimėjimo. (Formatas ruošiamas.)',
+    'Swiss System (Šveicariška sistema)':
+        'Kiekvienas raundas — naujas varžovas pagal rezultatus. Taškų sistema kaip grupėse.',
+    'Ladder (Piramidė)':
+        'Pozicijos lentelėje — žaidėjai gali iššaukti aukščiau esančius. Challenge rankiniu būdu.',
+    'Americano':
+        'Partneriai keičiasi kiekvieno raundo metu. (Formatas ruošiamas.)',
+    'Mexicano':
+        'Dinaminis partnerių paskirstymas pagal rezultatus. (Formatas ruošiamas.)',
+    'Paguodos turnyras (Consolation)':
+        'Antras kelias pralaimėjusiems — kovos dėl consolation vietų.',
+  };
+
+  String _formatDescription(String format) =>
+      _formatDescriptions[format] ??
+      'Pasirinkite etapo formatą pagal turnyro struktūrą.';
+
   void _showComingSoonFormatNotice() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -502,6 +527,67 @@ class _AdminTournamentControlScreenState
       return false;
     }
     return true;
+  }
+
+  Future<void> _openAddStageWizard(String division) async {
+    final divCount = _stagesForDivision(division).length;
+    final nextIndex = divCount + 1;
+    final initialDraft = _createDefaultStage(nextIndex, division);
+    initialDraft['id'] =
+        'stage_${DateTime.now().millisecondsSinceEpoch}_$nextIndex';
+
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: QortColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final bottomInset = MediaQuery.viewInsetsOf(ctx).bottom;
+        final sheetHeight = MediaQuery.sizeOf(ctx).height * 0.88;
+        return Padding(
+          padding: EdgeInsets.only(bottom: bottomInset),
+          child: SizedBox(
+            height: sheetHeight,
+            child: _AddStageWizardSheet(
+              division: division,
+              initialDraft: initialDraft,
+              allFormats: _allFormats,
+              comingSoonFormats: _comingSoonFormats,
+              placesOptions: _placesOptions,
+              formatDropdownLabel: _formatDropdownLabel,
+              formatDescription: _formatDescription,
+              isLadderFormat: _isLadderFormat,
+              isComingSoonFormat: _isComingSoonFormat,
+              onComingSoonFormat: _showComingSoonFormatNotice,
+              buildRoutingItems: ({
+                required String division,
+                required String excludeStageId,
+                required bool forAdvance,
+              }) =>
+                  _buildRoutingDropdownItems(
+                    division: division,
+                    excludeStageId: excludeStageId,
+                    forAdvance: forAdvance,
+                  ),
+              routingTargetLabelForId: (targetId) {
+                if (targetId == 'none') return null;
+                final stage = _findStageById(
+                  targetId,
+                  _stagesForDivision(division),
+                );
+                return stage != null ? _routingTargetLabel(stage) : null;
+              },
+            ),
+          ),
+        );
+      },
+    );
+
+    if (result != null && mounted) {
+      setState(() => _stages.add(result));
+    }
   }
 
   Future<void> _loadData() async {
@@ -2493,13 +2579,7 @@ class _AdminTournamentControlScreenState
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              onPressed: () {
-                setState(() {
-                  _stages.add(
-                    _createDefaultStage(_stages.length + 1, division),
-                  );
-                });
-              },
+              onPressed: () => _openAddStageWizard(division),
             ),
           ),
 
@@ -3163,6 +3243,870 @@ class _BulkScheduleScreenState extends State<BulkScheduleScreen> {
               }),
               ],
             ),
+    );
+  }
+}
+
+typedef _WizardRoutingItemsBuilder = List<DropdownMenuItem<String>> Function({
+  required String division,
+  required String excludeStageId,
+  required bool forAdvance,
+});
+
+class _AddStageWizardSheet extends StatefulWidget {
+  final String division;
+  final Map<String, dynamic> initialDraft;
+  final List<String> allFormats;
+  final Set<String> comingSoonFormats;
+  final List<String> placesOptions;
+  final String Function(String format) formatDropdownLabel;
+  final String Function(String format) formatDescription;
+  final bool Function(String format) isLadderFormat;
+  final bool Function(String format) isComingSoonFormat;
+  final VoidCallback onComingSoonFormat;
+  final _WizardRoutingItemsBuilder buildRoutingItems;
+  final String? Function(String targetId) routingTargetLabelForId;
+
+  const _AddStageWizardSheet({
+    required this.division,
+    required this.initialDraft,
+    required this.allFormats,
+    required this.comingSoonFormats,
+    required this.placesOptions,
+    required this.formatDropdownLabel,
+    required this.formatDescription,
+    required this.isLadderFormat,
+    required this.isComingSoonFormat,
+    required this.onComingSoonFormat,
+    required this.buildRoutingItems,
+    required this.routingTargetLabelForId,
+  });
+
+  @override
+  State<_AddStageWizardSheet> createState() => _AddStageWizardSheetState();
+}
+
+class _AddStageWizardSheetState extends State<_AddStageWizardSheet> {
+  static const _stepLabels = [
+    'Pagrindinis',
+    'Nustatymai',
+    'Kryžkelės',
+    'Peržiūra',
+  ];
+
+  late Map<String, dynamic> _draft;
+  int _step = 0;
+  bool _step2Skipped = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _draft = Map<String, dynamic>.from(widget.initialDraft);
+  }
+
+  String get _format => _draft['format']?.toString() ?? 'Round Robin (Grupės)';
+
+  String get _draftId => _draft['id'].toString();
+
+  bool get _skipFormatSettingsStep => widget.isLadderFormat(_format);
+
+  bool get _hasGroupSettings =>
+      _format.contains('Grupės') || _format.contains('Swiss');
+
+  bool get _hasEliminationSettings =>
+      _format.contains('Elimination') ||
+      _format.contains('Atkrintamosios') ||
+      _format.contains('Kvalifikacija') ||
+      _format.contains('Paguodos');
+
+  void _goNext() {
+    if (_step == 0) {
+      final name = _draft['name']?.toString().trim() ?? '';
+      if (name.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Įveskite etapo pavadinimą.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+      if (_skipFormatSettingsStep) {
+        setState(() {
+          _step2Skipped = true;
+          _step = 2;
+        });
+        return;
+      }
+      setState(() {
+        _step2Skipped = false;
+        _step = 1;
+      });
+      return;
+    }
+    if (_step == 1) {
+      setState(() => _step = 2);
+      return;
+    }
+    if (_step == 2) {
+      setState(() => _step = 3);
+    }
+  }
+
+  void _goBack() {
+    if (_step == 2 && _step2Skipped) {
+      setState(() => _step = 0);
+      return;
+    }
+    if (_step == 2) {
+      setState(() => _step = 1);
+      return;
+    }
+    if (_step == 1) {
+      setState(() => _step = 0);
+      return;
+    }
+    if (_step == 3) {
+      setState(() => _step = 2);
+    }
+  }
+
+  void _confirmAdd() {
+    Navigator.pop(context, Map<String, dynamic>.from(_draft));
+  }
+
+  Widget _wizardDropdown({
+    required String value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    final options = List<String>.from(items);
+    if (!options.contains(value)) options.add(value);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+      decoration: BoxDecoration(
+        color: QortColors.background,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: QortColors.border),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          isExpanded: true,
+          dropdownColor: QortColors.surface,
+          style: const TextStyle(
+            color: QortColors.textPrimary,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+          items: options
+              .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+              .toList(),
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStepIndicator() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      child: Column(
+        children: [
+          Row(
+            children: List.generate(4 * 2 - 1, (i) {
+              if (i.isOdd) {
+                final lineStep = i ~/ 2;
+                final isPast = lineStep < _step;
+                return Expanded(
+                  child: Container(
+                    height: 2,
+                    color: isPast
+                        ? QortDesignSystem.training.withValues(alpha: 0.5)
+                        : QortDesignSystem.borderSubtle,
+                  ),
+                );
+              }
+              final stepIndex = i ~/ 2;
+              final isCurrent = stepIndex == _step;
+              final isPast = stepIndex < _step;
+              final isSkipped =
+                  stepIndex == 1 && _step2Skipped && _step >= 2;
+
+              Color fillColor;
+              Color borderColor;
+              if (isCurrent) {
+                fillColor = QortDesignSystem.training;
+                borderColor = QortDesignSystem.training;
+              } else if (isPast || isSkipped) {
+                fillColor = QortDesignSystem.textMuted;
+                borderColor = QortDesignSystem.textMuted;
+              } else {
+                fillColor = Colors.transparent;
+                borderColor = QortDesignSystem.borderDefault;
+              }
+
+              return Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: fillColor,
+                  border: Border.all(color: borderColor, width: 2),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '${stepIndex + 1}',
+                  style: TextStyle(
+                    color: isCurrent || isPast || isSkipped
+                        ? QortColors.textPrimary
+                        : QortDesignSystem.textMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: List.generate(
+              4,
+              (i) => Expanded(
+                child: Text(
+                  _stepLabels[i],
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: i == _step
+                        ? QortDesignSystem.training
+                        : QortDesignSystem.textMuted,
+                    fontSize: 10,
+                    fontWeight: i == _step ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStep1Basic() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'PAGRINDINIS',
+          style: GoogleFonts.bebasNeue(
+            color: QortColors.textPrimary,
+            fontSize: 22,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 24),
+        Text(
+          'Etapo pavadinimas',
+          style: GoogleFonts.bebasNeue(
+            color: QortDesignSystem.textSecondary,
+            fontSize: 13,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: TextEditingController(text: _draft['name']?.toString())
+            ..selection = TextSelection.collapsed(
+              offset: (_draft['name']?.toString() ?? '').length,
+            ),
+          onChanged: (v) => _draft['name'] = v,
+          style: const TextStyle(
+            color: QortColors.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: QortColors.background,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: QortColors.border),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: QortColors.border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(
+                color: QortDesignSystem.training.withValues(alpha: 0.7),
+              ),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
+          ),
+        ),
+        const SizedBox(height: 32),
+        Text(
+          'Etapo formatas',
+          style: GoogleFonts.bebasNeue(
+            color: QortDesignSystem.textSecondary,
+            fontSize: 13,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+          decoration: BoxDecoration(
+            color: QortColors.background,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: QortColors.border),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _format,
+              isExpanded: true,
+              dropdownColor: QortColors.surface,
+              style: const TextStyle(
+                color: QortColors.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+              items: widget.allFormats.map((format) {
+                final comingSoon = widget.isComingSoonFormat(format);
+                return DropdownMenuItem<String>(
+                  value: format,
+                  enabled: !comingSoon,
+                  child: Text(
+                    widget.formatDropdownLabel(format),
+                    style: TextStyle(
+                      color: comingSoon
+                          ? QortColors.textSecondary
+                          : QortColors.textPrimary,
+                    ),
+                  ),
+                );
+              }).toList(),
+              onChanged: (selected) {
+                if (selected == null) return;
+                if (widget.isComingSoonFormat(selected)) {
+                  widget.onComingSoonFormat();
+                  return;
+                }
+                setState(() => _draft['format'] = selected);
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: QortDesignSystem.training.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: QortDesignSystem.training.withValues(alpha: 0.25),
+            ),
+          ),
+          child: Text(
+            widget.formatDescription(_format),
+            style: const TextStyle(
+              color: QortColors.textSecondary,
+              fontSize: 13,
+              height: 1.45,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStep2FormatSettings() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'FORMATO NUSTATYMAI',
+          style: GoogleFonts.bebasNeue(
+            color: QortColors.textPrimary,
+            fontSize: 22,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _format,
+          style: const TextStyle(
+            color: QortDesignSystem.textMuted,
+            fontSize: 12,
+          ),
+        ),
+        const SizedBox(height: 24),
+        if (_hasGroupSettings) ...[
+          Text(
+            'Į kiek grupių dalinsime?',
+            style: GoogleFonts.bebasNeue(
+              color: QortDesignSystem.textSecondary,
+              fontSize: 13,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _wizardDropdown(
+            value: (_draft['group_count'] ?? 2).toString(),
+            items: const ['1', '2', '3', '4', '6', '8'],
+            onChanged: (v) =>
+                setState(() => _draft['group_count'] = int.parse(v!)),
+          ),
+          const SizedBox(height: 28),
+          Text(
+            'Kiek žaidėjų išeina į kitą etapą iš grupės?',
+            style: GoogleFonts.bebasNeue(
+              color: QortDesignSystem.textSecondary,
+              fontSize: 13,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _wizardDropdown(
+            value: (_draft['advancing_players'] ?? 2).toString(),
+            items: const ['1', '2', '3', '4', '8'],
+            onChanged: (v) =>
+                setState(() => _draft['advancing_players'] = int.parse(v!)),
+          ),
+          const SizedBox(height: 28),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Ar galimos lygiosios?',
+                style: GoogleFonts.bebasNeue(
+                  color: QortDesignSystem.textSecondary,
+                  fontSize: 13,
+                  letterSpacing: 1,
+                ),
+              ),
+              Switch(
+                value: _draft['allow_ties'] == true,
+                activeThumbColor: QortDesignSystem.training,
+                onChanged: (v) => setState(() => _draft['allow_ties'] = v),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+          Text(
+            'Taškų sistema',
+            style: GoogleFonts.bebasNeue(
+              color: Colors.orange,
+              fontSize: 13,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Pergalė',
+            style: TextStyle(
+              color: QortColors.textSecondary,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _wizardDropdown(
+            value: (_draft['points_for_win'] ?? 3).toString(),
+            items: const ['1', '2', '3', '4', '5'],
+            onChanged: (v) =>
+                setState(() => _draft['points_for_win'] = int.parse(v!)),
+          ),
+          if (_draft['allow_ties'] == true) ...[
+            const SizedBox(height: 20),
+            const Text(
+              'Lygiosios',
+              style: TextStyle(
+                color: QortColors.textSecondary,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _wizardDropdown(
+              value: (_draft['points_for_tie'] ?? 1).toString(),
+              items: const ['0', '1', '2'],
+              onChanged: (v) =>
+                  setState(() => _draft['points_for_tie'] = int.parse(v!)),
+            ),
+          ],
+          const SizedBox(height: 20),
+          const Text(
+            'Pralaimėjimas',
+            style: TextStyle(
+              color: QortColors.textSecondary,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _wizardDropdown(
+            value: (_draft['points_for_loss'] ?? 0).toString(),
+            items: const ['0', '1', '2'],
+            onChanged: (v) =>
+                setState(() => _draft['points_for_loss'] = int.parse(v!)),
+          ),
+        ],
+        if (_hasEliminationSettings) ...[
+          Text(
+            'Kiek vietų išžaisti?',
+            style: GoogleFonts.bebasNeue(
+              color: QortDesignSystem.textSecondary,
+              fontSize: 13,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _wizardDropdown(
+            value: _draft['playoff_places']?.toString() ?? 'Tik nugalėtoją',
+            items: widget.placesOptions,
+            onChanged: (v) => setState(() => _draft['playoff_places'] = v),
+          ),
+        ],
+        if (!_hasGroupSettings && !_hasEliminationSettings)
+          const Text(
+            'Šiam formatui papildomi nustatymai nereikalingi.',
+            style: TextStyle(color: QortColors.textSecondary, fontSize: 13),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildRoutingDropdown({
+    required String fieldKey,
+    required bool forAdvance,
+  }) {
+    final accentColor =
+        forAdvance ? QortDesignSystem.training : QortDesignSystem.error;
+    final label = forAdvance
+        ? '🏆 KUR KELIAUJA LAIMĖTOJAI?'
+        : '💔 KUR KELIAUJA PRALAIMĖTOJAI?';
+    final value = _draft[fieldKey]?.toString() ?? 'none';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.bebasNeue(
+            color: accentColor,
+            fontSize: 14,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+          decoration: BoxDecoration(
+            color: accentColor.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: accentColor.withValues(alpha: 0.45)),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: value,
+              isExpanded: true,
+              dropdownColor: QortColors.surface,
+              style: const TextStyle(
+                color: QortColors.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+              items: widget.buildRoutingItems(
+                division: widget.division,
+                excludeStageId: _draftId,
+                forAdvance: forAdvance,
+              ),
+              onChanged: (v) => setState(() => _draft[fieldKey] = v),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStep3Routing() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'KAS TOLIAU?',
+          style: GoogleFonts.bebasNeue(
+            color: QortColors.textPrimary,
+            fontSize: 22,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Nurodykite, kur keliauja laimėtojai ir pralaimėtojai po šio etapo.',
+          style: TextStyle(
+            color: QortColors.textSecondary,
+            fontSize: 13,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 32),
+        _buildRoutingDropdown(fieldKey: 'advance_to', forAdvance: true),
+        const SizedBox(height: 32),
+        _buildRoutingDropdown(fieldKey: 'drop_to', forAdvance: false),
+      ],
+    );
+  }
+
+  String _routingSummaryLine(String fieldKey, {required bool forAdvance}) {
+    final targetId = _draft[fieldKey]?.toString() ?? 'none';
+    if (targetId == 'none') {
+      return forAdvance
+          ? 'Niekur — finalas (čia baigiasi kelias)'
+          : 'Niekur — iškrenta iš turnyro';
+    }
+    return widget.routingTargetLabelForId(targetId) ?? '(nerastas etapas)';
+  }
+
+  String _settingsSummary() {
+    if (_skipFormatSettingsStep) {
+      return 'Ladder — papildomi nustatymai nereikalingi';
+    }
+    if (_hasGroupSettings) {
+      final ties = _draft['allow_ties'] == true;
+      final tiePts = _draft['points_for_tie'] ?? 1;
+      final tiePart = ties ? '/$tiePts' : '';
+      return '${_draft['group_count'] ?? 2} grupės, '
+          '${_draft['advancing_players'] ?? 2} išeina, '
+          'taškai ${_draft['points_for_win'] ?? 3}$tiePart/${_draft['points_for_loss'] ?? 0}';
+    }
+    if (_hasEliminationSettings) {
+      return _draft['playoff_places']?.toString() ?? 'Tik nugalėtoją';
+    }
+    return '—';
+  }
+
+  Widget _reviewRow(String label, String value, {Color? valueColor}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: QortColors.textSecondary,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: valueColor ?? QortColors.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStep4Review() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'PERŽIŪRA',
+          style: GoogleFonts.bebasNeue(
+            color: QortColors.textPrimary,
+            fontSize: 22,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Patikrinkite pasirinkimus prieš pridedant etapą.',
+          style: TextStyle(
+            color: QortColors.textSecondary,
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 24),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: QortColors.background,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: QortColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _reviewRow('Pavadinimas', _draft['name']?.toString() ?? '—'),
+              _reviewRow('Formatas', _format),
+              _reviewRow('Nustatymai', _settingsSummary()),
+              _reviewRow(
+                '🏆 Laimėtojai →',
+                _routingSummaryLine('advance_to', forAdvance: true),
+                valueColor: QortDesignSystem.training,
+              ),
+              _reviewRow(
+                '💔 Pralaimėtojai →',
+                _routingSummaryLine('drop_to', forAdvance: false),
+                valueColor: QortDesignSystem.error,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStepBody() {
+    switch (_step) {
+      case 0:
+        return _buildStep1Basic();
+      case 1:
+        return _buildStep2FormatSettings();
+      case 2:
+        return _buildStep3Routing();
+      case 3:
+        return _buildStep4Review();
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  Widget _buildNavBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+      decoration: BoxDecoration(
+        color: QortColors.surface,
+        border: Border(top: BorderSide(color: QortDesignSystem.borderSubtle)),
+      ),
+      child: Row(
+        children: [
+          if (_step == 0)
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                'Atšaukti',
+                style: TextStyle(color: QortColors.textSecondary),
+              ),
+            )
+          else
+            TextButton.icon(
+              onPressed: _goBack,
+              icon: const Icon(LucideIcons.arrowLeft, size: 16),
+              label: const Text('Atgal'),
+              style: TextButton.styleFrom(
+                foregroundColor: QortColors.textSecondary,
+              ),
+            ),
+          const Spacer(),
+          if (_step < 3)
+            ElevatedButton.icon(
+              onPressed: _goNext,
+              icon: const Icon(LucideIcons.arrowRight, size: 16),
+              label: const Text('Pirmyn'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: QortDesignSystem.training,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+              ),
+            )
+          else
+            ElevatedButton.icon(
+              onPressed: _confirmAdd,
+              icon: const Icon(LucideIcons.check, size: 16),
+              label: const Text('PRIDĖTI ETAPĄ'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: QortDesignSystem.training,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 8),
+        Center(
+          child: Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: QortDesignSystem.borderDefault,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 12, 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'NAUJAS ETAPAS',
+                  style: GoogleFonts.bebasNeue(
+                    color: QortColors.textPrimary,
+                    fontSize: 22,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(LucideIcons.x, color: QortColors.textSecondary),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        ),
+        Text(
+          widget.division,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: QortDesignSystem.textMuted,
+            fontSize: 12,
+          ),
+        ),
+        _buildStepIndicator(),
+        const Divider(height: 1, color: QortColors.border),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+            child: _buildStepBody(),
+          ),
+        ),
+        _buildNavBar(),
+      ],
     );
   }
 }
