@@ -70,6 +70,34 @@ class _AdminTournamentControlScreenState
     "Paguodos turnyras (Consolation)",
   ];
 
+  static const Set<String> _comingSoonFormats = {
+    'Double Elimination (Dvigubo minuso)',
+    'Americano',
+    'Mexicano',
+  };
+
+  bool _isComingSoonFormat(String format) => _comingSoonFormats.contains(format);
+
+  bool _isLadderFormat(String format) =>
+      format.contains('Ladder') || format.contains('Piramidė');
+
+  String _formatDropdownLabel(String format) {
+    if (_isComingSoonFormat(format)) return '$format (Ruošiamas)';
+    return format;
+  }
+
+  void _showComingSoonFormatNotice() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Šis formatas dar ruošiamas. Pasirink Round Robin arba Single Elimination.',
+        ),
+        backgroundColor: Colors.orange,
+        duration: Duration(seconds: 4),
+      ),
+    );
+  }
+
   final List<String> _placesOptions = [
     "Tik nugalėtoją",
     "Dėl 3 vietos",
@@ -1678,13 +1706,20 @@ class _AdminTournamentControlScreenState
                       _buildStageField(
                         label: "Etapo Formatas",
                         help: QortFormHelpTexts.stageFormat,
-                        child: _buildDropdown(
-                          "Formatas",
-                          format,
-                          _allFormats,
-                          (v) => setState(() => _stages[realIdx]['format'] = v!),
-                        ),
+                        child: _buildStageFormatDropdown(format, realIdx),
                       ),
+                      if (_isLadderFormat(format)) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Ladder formatas: pozicijos paskirstomos automatiškai. '
+                          'Challenge mačai organizuojami rankiniu būdu (funkcionalumas plečiamas).',
+                          style: TextStyle(
+                            color: Colors.amber.withValues(alpha: 0.95),
+                            fontSize: 11,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       _buildStageField(
                         label: "Tvarkaraščio Valdymas šiam etapui",
@@ -2229,6 +2264,48 @@ class _AdminTournamentControlScreenState
         ),
         child,
       ],
+    );
+  }
+
+  Widget _buildStageFormatDropdown(String value, int realIdx) {
+    final items = List<String>.from(_allFormats);
+    if (!items.contains(value)) items.add(value);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+      decoration: BoxDecoration(
+        color: QortColors.background,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          isExpanded: true,
+          dropdownColor: QortColors.background,
+          style: const TextStyle(color: QortColors.textPrimary, fontSize: 14),
+          items: items.map((format) {
+            final comingSoon = _isComingSoonFormat(format);
+            return DropdownMenuItem<String>(
+              value: format,
+              enabled: !comingSoon,
+              child: Text(
+                _formatDropdownLabel(format),
+                style: TextStyle(
+                  color: comingSoon ? QortColors.textSecondary : QortColors.textPrimary,
+                ),
+              ),
+            );
+          }).toList(),
+          onChanged: (selected) {
+            if (selected == null) return;
+            if (_isComingSoonFormat(selected)) {
+              _showComingSoonFormatNotice();
+              return;
+            }
+            setState(() => _stages[realIdx]['format'] = selected);
+          },
+        ),
+      ),
     );
   }
 
