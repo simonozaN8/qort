@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../core/theme/qort_colors.dart';
+import '../../core/theme/qort_design_system.dart';
 import '../../core/theme/qort_palette_extension.dart';
 import '../../core/widgets/qort_form_help.dart';
 import '../design/design_variants_screen.dart';
@@ -137,6 +138,238 @@ class _AdminTournamentControlScreenState
       'advance_to': 'none',
       'drop_to': 'none',
     };
+  }
+
+  List<Map<String, dynamic>> _stagesForDivision(String division) {
+    return _stages.where((s) => s['division'] == division).toList();
+  }
+
+  String _stageDisplayName(String stageId, List<Map<String, dynamic>> stages) {
+    for (final s in stages) {
+      if (s['id'].toString() == stageId) {
+        return s['name']?.toString() ?? 'Etapas';
+      }
+    }
+    return 'Etapas';
+  }
+
+  String _routingTargetLabel(Map<String, dynamic> stage) {
+    final name = stage['name']?.toString() ?? 'Etapas';
+    final format = stage['format']?.toString() ?? '';
+    if (format.isEmpty) return name;
+    return '$name ($format)';
+  }
+
+  List<String> _validRoutingIdsForDivision(String division) {
+    return [
+      'none',
+      ..._stagesForDivision(division).map((s) => s['id'].toString()),
+    ];
+  }
+
+  List<DropdownMenuItem<String>> _buildRoutingDropdownItems({
+    required String division,
+    required String excludeStageId,
+    required bool forAdvance,
+  }) {
+    final noneLabel = forAdvance
+        ? 'Niekur — finalas (čia baigiasi kelias)'
+        : 'Niekur — iškrenta iš turnyro';
+
+    final items = <DropdownMenuItem<String>>[
+      DropdownMenuItem(value: 'none', child: Text(noneLabel)),
+    ];
+
+    for (final s in _stagesForDivision(division)) {
+      final sId = s['id'].toString();
+      if (sId == excludeStageId) continue;
+      items.add(
+        DropdownMenuItem(
+          value: sId,
+          child: Text(_routingTargetLabel(s)),
+        ),
+      );
+    }
+    return items;
+  }
+
+  /// Grąžina (A, B) porą, jei divizione aptiktas routing ciklas.
+  (String, String)? _findRoutingCycleInDivision(String division) {
+    final divStages = _stagesForDivision(division);
+    if (divStages.length < 2) return null;
+
+    final ids = divStages.map((s) => s['id'].toString()).toSet();
+    final adjacency = <String, List<String>>{for (final id in ids) id: []};
+
+    for (final s in divStages) {
+      final id = s['id'].toString();
+      for (final key in ['advance_to', 'drop_to']) {
+        final target = s[key]?.toString() ?? 'none';
+        if (target != 'none' && ids.contains(target)) {
+          adjacency[id]!.add(target);
+        }
+      }
+    }
+
+    final visiting = <String>{};
+    final visited = <String>{};
+    String? cycleA;
+    String? cycleB;
+
+    bool dfs(String node, List<String> path) {
+      if (visiting.contains(node)) {
+        final idx = path.indexOf(node);
+        if (idx >= 0) {
+          cycleA = path[idx];
+          cycleB = idx + 1 < path.length ? path[idx + 1] : node;
+        } else if (path.isNotEmpty) {
+          cycleA = path.last;
+          cycleB = node;
+        } else {
+          cycleA = node;
+          cycleB = node;
+        }
+        return true;
+      }
+      if (visited.contains(node)) return false;
+
+      visiting.add(node);
+      path.add(node);
+      for (final next in adjacency[node] ?? []) {
+        if (dfs(next, path)) return true;
+      }
+      path.removeLast();
+      visiting.remove(node);
+      visited.add(node);
+      return false;
+    }
+
+    for (final id in ids) {
+      if (!visited.contains(id) && dfs(id, [])) {
+        return (
+          _stageDisplayName(cycleA!, divStages),
+          _stageDisplayName(cycleB!, divStages),
+        );
+      }
+    }
+    return null;
+  }
+
+  /// Prieš save: self-reference ir neegzistuojantys target'ai → reset į none.
+  bool _sanitizeStageRouting({bool showMessages = false}) {
+    var changed = false;
+    final messages = <String>[];
+
+    for (var i = 0; i < _stages.length; i++) {
+      final stage = _stages[i];
+      final stageId = stage['id'].toString();
+      final division = stage['division']?.toString() ?? '';
+      final validIds = _validRoutingIdsForDivision(division);
+
+      for (final key in ['advance_to', 'drop_to']) {
+        final value = stage[key]?.toString() ?? 'none';
+        if (value == stageId) {
+          stage[key] = 'none';
+          changed = true;
+          messages.add('Etapas negali nukreipti į save patį.');
+        } else if (value != 'none' && !validIds.contains(value)) {
+          stage[key] = 'none';
+          changed = true;
+          messages.add(
+            'Nuoroda į neegzistuojantį etapą pašalinta (${stage['name']}).',
+          );
+        }
+      }
+    }
+
+    if (showMessages && messages.isNotEmpty && mounted) {
+      for (final msg in messages.toSet()) {
+        _showInfo(msg);
+      }
+    }
+    return changed;
+  }
+
+  Map<String, List<String>> _stageWarningsForDivision(String division) {
+    final divStages = _stagesForDivision(division);
+    final warnings = <String, List<String>>{};
+
+    void addWarning(String stageId, String message) {
+      warnings.putIfAbsent(stageId, () => []).add(message);
+    }
+
+    final targetIds = <String>{};
+    for (final s in divStages) {
+      for (final key in ['advance_to', 'drop_to']) {
+        final target = s[key]?.toString() ?? 'none';
+        if (target != 'none') targetIds.add(target);
+      }
+    }
+
+    for (var i = 0; i < divStages.length; i++) {
+      final stage = divStages[i];
+      final stageId = stage['id'].toString();
+      final advanceTo = stage['advance_to']?.toString() ?? 'none';
+      final dropTo = stage['drop_to']?.toString() ?? 'none';
+      final hasOutgoing = advanceTo != 'none' || dropTo != 'none';
+      final isTarget = targetIds.contains(stageId);
+      final isLast = i == divStages.length - 1;
+
+      if (advanceTo == 'none' &&
+          dropTo == 'none' &&
+          !isLast &&
+          divStages.length > 1) {
+        addWarning(
+          stageId,
+          'Šis etapas neturi tęsinio — žaidėjai sustos čia.',
+        );
+      }
+
+      if (!isTarget && !hasOutgoing && divStages.length > 1) {
+        addWarning(
+          stageId,
+          'Šis etapas atjungtas nuo pagrindinio srauto.',
+        );
+      }
+    }
+
+    return warnings;
+  }
+
+  Future<bool> _validateStagesBeforeSave() async {
+    if (_sanitizeStageRouting(showMessages: true)) {
+      setState(() {});
+    }
+
+    for (final division in _tournamentDivisions) {
+      final cycle = _findRoutingCycleInDivision(division);
+      if (cycle == null) continue;
+
+      if (!mounted) return false;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: QortColors.surface,
+          title: const Text(
+            'Ciklas tarp etapų',
+            style: TextStyle(color: QortColors.textPrimary),
+          ),
+          content: Text(
+            'Aptiktas ciklas tarp etapų: [${cycle.$1}] ↔ [${cycle.$2}]. '
+            'Etapas negali nukreipti atgal.',
+            style: const TextStyle(color: QortColors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Supratau'),
+            ),
+          ],
+        ),
+      );
+      return false;
+    }
+    return true;
   }
 
   Future<void> _loadData() async {
@@ -306,6 +539,12 @@ class _AdminTournamentControlScreenState
   Future<void> _saveSettings() async {
     setState(() => _isLoading = true);
     try {
+      final canSave = await _validateStagesBeforeSave();
+      if (!canSave) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
       String finalVenueType = _venueType;
       if (_venueType == "Kitas (įrašyti savo...)") {
         finalVenueType = _customVenueCtrl.text.trim();
@@ -1061,6 +1300,18 @@ class _AdminTournamentControlScreenState
     }
   }
 
+  void _showInfo(String msg) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: QortDesignSystem.info,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
   Future<void> _selectStageDate(int stageIndex, String field) async {
     DateTime? current = _stages[stageIndex][field] != null
         ? DateTime.parse(_stages[stageIndex][field])
@@ -1367,20 +1618,8 @@ class _AdminTournamentControlScreenState
     bool hasMatches = divMatches.isNotEmpty;
     bool isCompleted = widget.tournament['status'] == 'completed';
 
-    List<String> validRoutingIds = ['none'];
-    List<DropdownMenuItem<String>> routingOptions = [
-      const DropdownMenuItem(
-        value: 'none',
-        child: Text("Niekur (Pabaiga / Iškrenta)"),
-      ),
-    ];
-    for (var s in _stages) {
-      String sId = s['id'].toString();
-      validRoutingIds.add(sId);
-      routingOptions.add(
-        DropdownMenuItem(value: sId, child: Text(s['name'] ?? "Etapas")),
-      );
-    }
+    final validRoutingIds = _validRoutingIdsForDivision(division);
+    final stageWarnings = _stageWarningsForDivision(division);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1633,6 +1872,8 @@ class _AdminTournamentControlScreenState
           }
 
           int realIdx = _stages.indexOf(stage);
+          final stageId = stage['id'].toString();
+          final cardWarnings = stageWarnings[stageId] ?? const [];
 
           return Container(
             margin: const EdgeInsets.only(bottom: 20),
@@ -1685,6 +1926,18 @@ class _AdminTournamentControlScreenState
                           ),
                         ),
                       ),
+                      if (cardWarnings.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: Tooltip(
+                            message: cardWarnings.join('\n'),
+                            child: const Icon(
+                              LucideIcons.alertTriangle,
+                              color: QortDesignSystem.warning,
+                              size: 18,
+                            ),
+                          ),
+                        ),
                       if (!isCompleted)
                         IconButton(
                           icon: const Icon(
@@ -1975,21 +2228,30 @@ class _AdminTournamentControlScreenState
                       const SizedBox(height: 15),
 
                       _buildStageField(
-                        label: "Kur keliauja laimėtojai / išeinantys iš grupės?",
+                        label: '🏆 KUR KELIAUJA LAIMĖTOJAI?',
                         help: QortFormHelpTexts.stageAdvanceTo,
+                        labelStyle: GoogleFonts.bebasNeue(
+                          color: QortDesignSystem.training,
+                          fontSize: 14,
+                          letterSpacing: 1,
+                        ),
                         child: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 15,
                           vertical: 5,
                         ),
                         decoration: BoxDecoration(
-                          color: QortColors.background,
+                          color: QortDesignSystem.training.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: QortColors.border),
+                          border: Border.all(
+                            color: QortDesignSystem.training.withValues(alpha: 0.45),
+                          ),
                         ),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<String>(
-                            value: stage['advance_to'],
+                            value: validRoutingIds.contains(stage['advance_to'])
+                                ? stage['advance_to']
+                                : 'none',
                             isExpanded: true,
                             dropdownColor: QortColors.surface,
                             style: const TextStyle(
@@ -1997,7 +2259,11 @@ class _AdminTournamentControlScreenState
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
                             ),
-                            items: routingOptions,
+                            items: _buildRoutingDropdownItems(
+                              division: division,
+                              excludeStageId: stageId,
+                              forAdvance: true,
+                            ),
                             onChanged: (v) => setState(
                               () => _stages[realIdx]['advance_to'] = v!,
                             ),
@@ -2008,21 +2274,30 @@ class _AdminTournamentControlScreenState
 
                       const SizedBox(height: 12),
                       _buildStageField(
-                        label: "Kur keliauja pralaimėtojai / neišeinantys?",
+                        label: '💔 KUR KELIAUJA PRALAIMĖTOJAI?',
                         help: QortFormHelpTexts.stageDropTo,
+                        labelStyle: GoogleFonts.bebasNeue(
+                          color: QortDesignSystem.error,
+                          fontSize: 14,
+                          letterSpacing: 1,
+                        ),
                         child: Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 15,
                           vertical: 5,
                         ),
                         decoration: BoxDecoration(
-                          color: QortColors.background,
+                          color: QortDesignSystem.error.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: QortColors.border),
+                          border: Border.all(
+                            color: QortDesignSystem.error.withValues(alpha: 0.45),
+                          ),
                         ),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<String>(
-                            value: stage['drop_to'],
+                            value: validRoutingIds.contains(stage['drop_to'])
+                                ? stage['drop_to']
+                                : 'none',
                             isExpanded: true,
                             dropdownColor: QortColors.surface,
                             style: const TextStyle(
@@ -2030,7 +2305,11 @@ class _AdminTournamentControlScreenState
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
                             ),
-                            items: routingOptions,
+                            items: _buildRoutingDropdownItems(
+                              division: division,
+                              excludeStageId: stageId,
+                              forAdvance: false,
+                            ),
                             onChanged: (v) => setState(
                               () => _stages[realIdx]['drop_to'] = v!,
                             ),
@@ -2101,12 +2380,12 @@ class _AdminTournamentControlScreenState
             ),
           ),
 
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 12),
           child: Row(
             children: [
               Icon(LucideIcons.info, size: 16, color: QortColors.textSecondary),
-              const SizedBox(width: 8),
+              SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'Slinkite žemyn — apačioje taškų sistema, kryžkelės ir veiksmai.',
@@ -2242,6 +2521,7 @@ class _AdminTournamentControlScreenState
     required String help,
     required Widget child,
     Widget? trailing,
+    TextStyle? labelStyle,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2253,10 +2533,11 @@ class _AdminTournamentControlScreenState
               child: QortFieldHelpLabel(
                 label: label,
                 help: help,
-                labelStyle: const TextStyle(
-                  color: QortColors.textSecondary,
-                  fontSize: 12,
-                ),
+                labelStyle: labelStyle ??
+                    const TextStyle(
+                      color: QortColors.textSecondary,
+                      fontSize: 12,
+                    ),
               ),
             ),
             if (trailing != null) trailing,
@@ -2730,7 +3011,7 @@ class _BulkScheduleScreenState extends State<BulkScheduleScreen> {
                     }),
                   ],
                 );
-              }).toList(),
+              }),
               ],
             ),
     );
