@@ -160,6 +160,138 @@ class _AdminTournamentControlScreenState
     return '$name ($format)';
   }
 
+  Map<String, dynamic>? _findStageById(
+    String stageId,
+    List<Map<String, dynamic>> stages,
+  ) {
+    for (final s in stages) {
+      if (s['id'].toString() == stageId) return s;
+    }
+    return null;
+  }
+
+  Widget _buildStageRoutingFlow({
+    required String advanceTo,
+    required String dropTo,
+    required List<Map<String, dynamic>> divStages,
+  }) {
+    if (advanceTo == 'none' && dropTo == 'none') {
+      return const SizedBox.shrink();
+    }
+
+    Widget buildFlowRow({
+      required String branch,
+      required bool isAdvance,
+      required String targetId,
+    }) {
+      final target = _findStageById(targetId, divStages);
+      final accentColor =
+          isAdvance ? QortDesignSystem.training : QortDesignSystem.error;
+      final emoji = isAdvance ? '🏆' : '💔';
+      final label = isAdvance ? 'Laimėtojai' : 'Pralaimėtojai';
+      final targetLabel =
+          target != null ? _routingTargetLabel(target) : '(nerastas etapas)';
+      final textColor =
+          target != null ? accentColor : QortDesignSystem.textMuted;
+
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 28,
+              child: Text(
+                branch,
+                style: TextStyle(
+                  color: QortDesignSystem.textMuted,
+                  fontSize: 13,
+                  height: 1.35,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
+            Text(emoji, style: const TextStyle(fontSize: 13, height: 1.35)),
+            const SizedBox(width: 6),
+            Expanded(
+              child: RichText(
+                text: TextSpan(
+                  style: const TextStyle(fontSize: 12, height: 1.35),
+                  children: [
+                    TextSpan(
+                      text: '$label → ',
+                      style: TextStyle(
+                        color: textColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    TextSpan(
+                      text: targetLabel,
+                      style: TextStyle(
+                        color: textColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (target == null)
+              Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: Icon(
+                  LucideIcons.alertTriangle,
+                  size: 14,
+                  color: QortDesignSystem.warning,
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
+    final rows = <Widget>[];
+    final hasAdvance = advanceTo != 'none';
+    final hasDrop = dropTo != 'none';
+
+    if (hasAdvance) {
+      rows.add(
+        buildFlowRow(
+          branch: hasDrop ? '├──' : '└──',
+          isAdvance: true,
+          targetId: advanceTo,
+        ),
+      );
+    }
+    if (hasDrop) {
+      rows.add(
+        buildFlowRow(
+          branch: '└──',
+          isAdvance: false,
+          targetId: dropTo,
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 20, bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 12),
+            child: Container(
+              width: 2,
+              height: 20,
+              color: QortDesignSystem.borderDefault,
+            ),
+          ),
+          ...rows,
+        ],
+      ),
+    );
+  }
+
   List<String> _validRoutingIdsForDivision(String division) {
     return [
       'none',
@@ -1863,6 +1995,11 @@ class _AdminTournamentControlScreenState
           Map<String, dynamic> stage = entry.value;
           String format = stage['format'] ?? "Round Robin (Grupės)";
           String stageName = stage['name']?.toString() ?? "${idx + 1} ETAPAS";
+          final rawAdvanceTo = stage['advance_to']?.toString() ?? 'none';
+          final rawDropTo = stage['drop_to']?.toString() ?? 'none';
+          final divStagesTyped = divStages
+              .map((s) => Map<String, dynamic>.from(s as Map))
+              .toList();
 
           if (!validRoutingIds.contains(stage['advance_to'])) {
             stage['advance_to'] = 'none';
@@ -1875,8 +2012,12 @@ class _AdminTournamentControlScreenState
           final stageId = stage['id'].toString();
           final cardWarnings = stageWarnings[stageId] ?? const [];
 
-          return Container(
-            margin: const EdgeInsets.only(bottom: 20),
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+            margin: EdgeInsets.zero,
             decoration: BoxDecoration(
               color: p.surface,
               borderRadius: BorderRadius.circular(16),
@@ -2322,6 +2463,14 @@ class _AdminTournamentControlScreenState
                 ),
               ],
             ),
+          ),
+              _buildStageRoutingFlow(
+                advanceTo: rawAdvanceTo,
+                dropTo: rawDropTo,
+                divStages: divStagesTyped,
+              ),
+              const SizedBox(height: 20),
+            ],
           );
         }),
 
