@@ -4,6 +4,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants/query_limits.dart';
+import '../../core/constants/match_constants.dart';
 import '../../core/theme/qort_colors.dart';
 import '../../core/theme/qort_palette.dart';
 import '../../core/theme/qort_palette_extension.dart';
@@ -14,6 +15,7 @@ import 'home_live_widgets.dart';
 import 'home_proposal_dialog.dart';
 import '../profile/user_model.dart';
 import '../tournament/tournament_detail_screen.dart';
+import '../tournament/tournament_engine.dart';
 
 class HomeScreen extends StatefulWidget {
   final AppMode currentMode;
@@ -163,7 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
           .eq('id', match['id']);
 
       _showSuccess(
-        "Rezultatas pateiktas! Varžovas turi 1 valandą jį patvirtinti.",
+        "Rezultatas pateiktas! Varžovas turi ${MatchConstants.confirmationTimeoutLabel} jį patvirtinti.",
       );
       _loadDashboardData();
     } catch (e) {
@@ -174,10 +176,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _confirmScore(Map<String, dynamic> match) async {
     setState(() => _isLoading = true);
     try {
-      await Supabase.instance.client
-          .from('matches')
-          .update({'status': 'completed'})
-          .eq('id', match['id']);
+      await TournamentEngine.finalizeMatchAndAdvance(
+        matchId: match['id'].toString(),
+        completionNote: 'Confirmed by opponent',
+      );
 
       _showSuccess("Mačas baigtas ir patvirtintas!");
       _loadDashboardData();
@@ -936,7 +938,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     const SizedBox(width: 10),
                                     Expanded(
                                       child: Text(
-                                        "Laukiama varžovo patvirtinimo. Jei nepatvirtins per 1 valandą – užsiskaitys automatiškai.",
+                                        "Laukiama varžovo patvirtinimo. Jei nepatvirtins per ${MatchConstants.confirmationTimeoutLabel} – užsiskaitys automatiškai.",
                                         style: TextStyle(
                                           color: Colors.orange.shade300,
                                           fontSize: 12,
@@ -1441,7 +1443,7 @@ class _HomeScreenState extends State<HomeScreen> {
       accentColor: accent,
       children: _isLoading
           ? [
-              Center(child: CircularProgressIndicator(color: accent)),
+              const Center(child: CircularProgressIndicator(color: accent)),
             ]
           : [
               _sectionHeader('Apžvalga', accent: accent),

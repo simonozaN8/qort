@@ -728,6 +728,8 @@ class _AdminTournamentControlScreenState
       final tId = widget.tournament['id'];
       final client = Supabase.instance.client;
 
+      await TournamentEngine.reconcileBracketAdvances(tId.toString());
+
       _tournamentDivisions = [];
       if (widget.tournament['divisions'] != null) {
         for (var div in widget.tournament['divisions']) {
@@ -1379,25 +1381,17 @@ class _AdminTournamentControlScreenState
             onPressed: () async {
               int s1 = int.tryParse(s1Ctrl.text) ?? 0;
               int s2 = int.tryParse(s2Ctrl.text) ?? 0;
-              String? wId = s1 > s2
-                  ? match['player1_id']
-                  : (s2 > s1 ? match['player2_id'] : null);
 
               Navigator.pop(ctx);
               setState(() => _isLoading = true);
               try {
-                await Supabase.instance.client
-                    .from('matches')
-                    .update({
-                      'status': 'completed',
-                      'score_p1': s1,
-                      'score_p2': s2,
-                      'winner_id': wId,
-                      'match_details': {
-                        'score_str': '$s1:$s2 (Admin išspręsta)',
-                      },
-                    })
-                    .eq('id', match['id']);
+                await TournamentEngine.finalizeMatchAndAdvance(
+                  matchId: match['id'].toString(),
+                  scoreP1: s1,
+                  scoreP2: s2,
+                  completionNote: 'Admin dispute resolution',
+                  scoreStr: '$s1:$s2 (Admin išspręsta)',
+                );
 
                 _showSuccess("Ginčas išspręstas!");
                 _loadData();
@@ -1775,6 +1769,87 @@ class _AdminTournamentControlScreenState
     );
   }
 
+  String _participantDisplayName(dynamic userId) {
+    if (userId == null) return '—';
+    final id = userId.toString();
+    for (final p in _participants) {
+      if (p['user_id']?.toString() == id) {
+        return p['team_name']?.toString() ?? 'Be vardo';
+      }
+    }
+    return 'Žaidėjas';
+  }
+
+  Widget _buildDisputesSection() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.red.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(LucideIcons.shieldAlert, color: Colors.red, size: 22),
+              const SizedBox(width: 8),
+              Text(
+                'GINČAI (${_disputedMatches.length})',
+                style: GoogleFonts.bebasNeue(
+                  color: Colors.red,
+                  fontSize: 22,
+                  letterSpacing: 1,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ..._disputedMatches.map((match) {
+            final p1 = _participantDisplayName(match['player1_id']);
+            final p2 = _participantDisplayName(match['player2_id']);
+            final stage = _stageDisplayName(
+              match['stage']?.toString() ?? '',
+              _stages,
+            );
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '• $p1 vs $p2 ($stage)',
+                      style: const TextStyle(
+                        color: QortColors.textPrimary,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: () => _resolveDisputeDialog(
+                      Map<String, dynamic>.from(match as Map),
+                    ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      backgroundColor: Colors.red.withValues(alpha: 0.15),
+                    ),
+                    child: const Text(
+                      'SPRĘSTI',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBendraInfo() {
     final p = context.qortPalette;
     return Column(
@@ -1818,6 +1893,11 @@ class _AdminTournamentControlScreenState
         const SizedBox(height: 30),
 
         _buildDeferredRoutingBanner(),
+
+        if (_disputedMatches.isNotEmpty) ...[
+          _buildDisputesSection(),
+          const SizedBox(height: 20),
+        ],
 
         _btn(
           "🤖 GENERUOTI BOTUS TESTAVIMUI",

@@ -12,7 +12,9 @@ import 'tournament_bracket_view.dart';
 import 'tournament_chat_tab.dart';
 import 'schedule_tab.dart';
 import 'ladder_tab.dart';
+import 'tournament_engine.dart';
 import '../../core/constants/query_limits.dart';
+import '../../core/constants/match_constants.dart';
 import '../../core/models/sport_catalog_entry.dart';
 import '../../core/services/tournament_registration_service.dart';
 import '../../core/services/sports_catalog_service.dart';
@@ -78,6 +80,7 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
       final client = Supabase.instance.client;
 
       await _checkAutoConfirmations(tId);
+      await TournamentEngine.reconcileBracketAdvances(tId);
 
       final results = await Future.wait([
         client
@@ -599,12 +602,24 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
           .limit(QueryLimits.autoCompleteMatches);
 
       for (var m in pendingMatches) {
-        if (m['submitted_at'] != null) {
-          final submitTime = DateTime.parse(m['submitted_at']).toUtc();
-          final diff = now.difference(submitTime);
-          if (diff.inHours >= 2) {
-            await _finalizeMatch(m, "Auto-confirmed (2h)");
+        final match = Map<String, dynamic>.from(m as Map);
+        DateTime? enteredAt;
+        if (match['submitted_at'] != null) {
+          enteredAt = DateTime.parse(match['submitted_at'].toString()).toUtc();
+        } else {
+          final details = match['match_details'];
+          if (details is Map && details['score_entered_at'] != null) {
+            enteredAt =
+                DateTime.parse(details['score_entered_at'].toString()).toUtc();
+          } else if (match['updated_at'] != null) {
+            enteredAt = DateTime.parse(match['updated_at'].toString()).toUtc();
           }
+        }
+        if (enteredAt == null) continue;
+
+        final diff = now.difference(enteredAt);
+        if (diff >= MatchConstants.scoreConfirmationTimeout) {
+          await _finalizeMatch(match, MatchConstants.autoConfirmCompletionNote);
         }
       }
     } catch (_) {}
@@ -890,22 +905,11 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
   }
 
   Future<void> _finalizeMatch(Map<String, dynamic> match, String reason) async {
-    int s1 = int.tryParse(match['score_p1'].toString()) ?? 0;
-    int s2 = int.tryParse(match['score_p2'].toString()) ?? 0;
-    String? winnerId = (s1 > s2)
-        ? match['player1_id']
-        : ((s2 > s1) ? match['player2_id'] : null);
-
     try {
-      final client = Supabase.instance.client;
-      await client
-          .from('matches')
-          .update({'status': 'completed', 'winner_id': winnerId})
-          .eq('id', match['id']);
-
-      if (winnerId != null) {
-        _moveWinnerToNextRound(match, winnerId);
-      }
+      await TournamentEngine.finalizeMatchAndAdvance(
+        matchId: match['id'].toString(),
+        completionNote: reason,
+      );
       _loadAllData();
     } catch (e) {
       debugPrint("Klaida finalizuojant: $e");
@@ -918,136 +922,17 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
     int s2,
     String details,
   ) async {
-    String? winnerId = (s1 > s2)
-        ? match['player1_id']
-        : ((s2 > s1) ? match['player2_id'] : null);
     try {
-      final client = Supabase.instance.client;
-      await client
-          .from('matches')
-          .update({
-            'score_p1': s1,
-            'score_p2': s2,
-            'status': 'completed',
-            'winner_id': winnerId,
-            'match_details': {'score_str': details},
-          })
-          .eq('id', match['id']);
-
-      if (winnerId != null) {
-        _moveWinnerToNextRound(match, winnerId);
-      }
+      await TournamentEngine.finalizeMatchAndAdvance(
+        matchId: match['id'].toString(),
+        scoreP1: s1,
+        scoreP2: s2,
+        completionNote: 'Admin override',
+        scoreStr: details,
+      );
       _loadAllData();
     } catch (e) {
       _showError(e.toString());
-    }
-  }
-
-  Future<void> _moveWinnerToNextRound(
-    Map<String, dynamic> match,
-    String winnerId,
-  ) async {
-    final client = Supabase.instance.client;
-    int r = int.tryParse(match['round'].toString()) ?? 1;
-    int m = int.tryParse(match['match_num'].toString()) ?? 1;
-    String tId = widget.tournament['id'].toString();
-    String stage = match['stage'];
-
-    String? loserId = (match['player1_id'] == winnerId)
-        ? match['player2_id']
-        : match['player1_id'];
-
-    int nextM = (m + 1) ~/ 2;
-    bool isP1 = (m % 2) != 0;
-
-    final allMatches = await client
-        .from('matches')
-        .select('round')
-        .eq('tournament_id', tId)
-        .eq('stage', stage);
-    int maxRound = 1;
-    bool hasThirdPlace = false;
-    bool hasAllPlaces = false;
-
-    for (var mx in allMatches) {
-      int rnd = int.tryParse(mx['round'].toString()) ?? 1;
-      if (rnd < 50 && rnd > maxRound) maxRound = rnd;
-      if (rnd == 99) hasThirdPlace = true;
-      if (rnd == 50) hasAllPlaces = true;
-    }
-
-    if (r < 50) {
-      if (r < maxRound) {
-        final nextMatches = await client
-            .from('matches')
-            .select()
-            .eq('tournament_id', tId)
-            .eq('stage', stage)
-            .eq('round', r + 1)
-            .eq('match_num', nextM);
-        if (nextMatches.isNotEmpty) {
-          await client
-              .from('matches')
-              .update({isP1 ? 'player1_id' : 'player2_id': winnerId})
-              .eq('id', nextMatches.first['id']);
-        }
-      }
-
-      if (loserId != null) {
-        if (r == maxRound - 1 && hasThirdPlace) {
-          final thirdPlaceM = await client
-              .from('matches')
-              .select()
-              .eq('tournament_id', tId)
-              .eq('stage', stage)
-              .eq('round', 99);
-          if (thirdPlaceM.isNotEmpty) {
-            await client
-                .from('matches')
-                .update({isP1 ? 'player1_id' : 'player2_id': loserId})
-                .eq('id', thirdPlaceM.first['id']);
-          }
-        } else if (r == maxRound - 2 && hasAllPlaces) {
-          final placementM = await client
-              .from('matches')
-              .select()
-              .eq('tournament_id', tId)
-              .eq('stage', stage)
-              .eq('round', 50)
-              .eq('match_num', nextM);
-          if (placementM.isNotEmpty) {
-            await client
-                .from('matches')
-                .update({isP1 ? 'player1_id' : 'player2_id': loserId})
-                .eq('id', placementM.first['id']);
-          }
-        }
-      }
-    } else if (r == 50 && loserId != null) {
-      final fifthPlaceM = await client
-          .from('matches')
-          .select()
-          .eq('tournament_id', tId)
-          .eq('stage', stage)
-          .eq('round', 51);
-      if (fifthPlaceM.isNotEmpty) {
-        await client
-            .from('matches')
-            .update({isP1 ? 'player1_id' : 'player2_id': winnerId})
-            .eq('id', fifthPlaceM.first['id']);
-      }
-      final seventhPlaceM = await client
-          .from('matches')
-          .select()
-          .eq('tournament_id', tId)
-          .eq('stage', stage)
-          .eq('round', 52);
-      if (seventhPlaceM.isNotEmpty) {
-        await client
-            .from('matches')
-            .update({isP1 ? 'player1_id' : 'player2_id': loserId})
-            .eq('id', seventhPlaceM.first['id']);
-      }
     }
   }
 

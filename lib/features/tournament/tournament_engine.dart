@@ -739,6 +739,234 @@ class TournamentEngine {
   }
 
   // =========================================================================
+  // MAČO FINALIZAVIMAS IR BRACKET PERKĖLIMAS
+  // =========================================================================
+
+  static String? _winnerFromScores(
+    int s1,
+    int s2,
+    String? player1Id,
+    String? player2Id,
+  ) {
+    if (s1 > s2) return player1Id;
+    if (s2 > s1) return player2Id;
+    return null;
+  }
+
+  /// Vieningas kelias užbaigti mačą: winner_id, completed_at, bracket advance.
+  static Future<void> finalizeMatchAndAdvance({
+    required String matchId,
+    int? scoreP1,
+    int? scoreP2,
+    String? completionNote,
+    String? scoreStr,
+  }) async {
+    final client = Supabase.instance.client;
+    final row = await client.from('matches').select().eq('id', matchId).single();
+    final match = Map<String, dynamic>.from(row as Map);
+
+    final s1 = scoreP1 ?? int.tryParse(match['score_p1'].toString()) ?? 0;
+    final s2 = scoreP2 ?? int.tryParse(match['score_p2'].toString()) ?? 0;
+    final winnerId = _winnerFromScores(
+      s1,
+      s2,
+      match['player1_id']?.toString(),
+      match['player2_id']?.toString(),
+    );
+
+    final updatePayload = <String, dynamic>{
+      'status': 'completed',
+      'winner_id': winnerId,
+      'completed_at': DateTime.now().toUtc().toIso8601String(),
+    };
+    if (scoreP1 != null) updatePayload['score_p1'] = s1;
+    if (scoreP2 != null) updatePayload['score_p2'] = s2;
+
+    if (completionNote != null || scoreStr != null) {
+      final rawDetails = match['match_details'];
+      final details = rawDetails is Map
+          ? Map<String, dynamic>.from(rawDetails)
+          : <String, dynamic>{};
+      if (completionNote != null) {
+        details['completion_note'] = completionNote;
+      }
+      if (scoreStr != null) {
+        details['score_str'] = scoreStr;
+      }
+      updatePayload['match_details'] = details;
+    }
+
+    await client.from('matches').update(updatePayload).eq('id', matchId);
+
+    match['score_p1'] = s1;
+    match['score_p2'] = s2;
+    match['winner_id'] = winnerId;
+    match['status'] = 'completed';
+
+    if (winnerId != null) {
+      await moveWinnerToNextRound(match, winnerId);
+    }
+  }
+
+  static Future<void> _assignPlayerToSlotIfNeeded(
+    SupabaseClient client,
+    String matchRowId,
+    bool isPlayer1Slot,
+    String playerId,
+  ) async {
+    final slotKey = isPlayer1Slot ? 'player1_id' : 'player2_id';
+    final existing = await client
+        .from('matches')
+        .select(slotKey)
+        .eq('id', matchRowId)
+        .maybeSingle();
+    if (existing == null) return;
+    final current = existing[slotKey]?.toString();
+    if (current == null || current.isEmpty || current == playerId) {
+      await client
+          .from('matches')
+          .update({slotKey: playerId})
+          .eq('id', matchRowId);
+    }
+  }
+
+  /// Perkelia laimėtoją/pralaimėtoją į kitą raundą (single elimination).
+  static Future<void> moveWinnerToNextRound(
+    Map<String, dynamic> match,
+    String winnerId,
+  ) async {
+    final client = Supabase.instance.client;
+    final r = int.tryParse(match['round'].toString()) ?? 1;
+    final m = int.tryParse(match['match_num'].toString()) ?? 1;
+    final tId = match['tournament_id'].toString();
+    final stage = match['stage'].toString();
+
+    final loserId = match['player1_id'] == winnerId
+        ? match['player2_id']?.toString()
+        : match['player1_id']?.toString();
+
+    final nextM = (m + 1) ~/ 2;
+    final isP1 = (m % 2) != 0;
+
+    final allMatches = await client
+        .from('matches')
+        .select('round')
+        .eq('tournament_id', tId)
+        .eq('stage', stage);
+    var maxRound = 1;
+    var hasThirdPlace = false;
+    var hasAllPlaces = false;
+
+    for (final mx in allMatches) {
+      final rnd = int.tryParse(mx['round'].toString()) ?? 1;
+      if (rnd < 50 && rnd > maxRound) maxRound = rnd;
+      if (rnd == 99) hasThirdPlace = true;
+      if (rnd == 50) hasAllPlaces = true;
+    }
+
+    if (r < 50) {
+      if (r < maxRound) {
+        final nextMatches = await client
+            .from('matches')
+            .select('id')
+            .eq('tournament_id', tId)
+            .eq('stage', stage)
+            .eq('round', r + 1)
+            .eq('match_num', nextM);
+        if (nextMatches.isNotEmpty) {
+          await _assignPlayerToSlotIfNeeded(
+            client,
+            nextMatches.first['id'].toString(),
+            isP1,
+            winnerId,
+          );
+        }
+      }
+
+      if (loserId != null) {
+        if (r == maxRound - 1 && hasThirdPlace) {
+          final thirdPlaceM = await client
+              .from('matches')
+              .select('id')
+              .eq('tournament_id', tId)
+              .eq('stage', stage)
+              .eq('round', 99);
+          if (thirdPlaceM.isNotEmpty) {
+            await _assignPlayerToSlotIfNeeded(
+              client,
+              thirdPlaceM.first['id'].toString(),
+              isP1,
+              loserId,
+            );
+          }
+        } else if (r == maxRound - 2 && hasAllPlaces) {
+          final placementM = await client
+              .from('matches')
+              .select('id')
+              .eq('tournament_id', tId)
+              .eq('stage', stage)
+              .eq('round', 50)
+              .eq('match_num', nextM);
+          if (placementM.isNotEmpty) {
+            await _assignPlayerToSlotIfNeeded(
+              client,
+              placementM.first['id'].toString(),
+              isP1,
+              loserId,
+            );
+          }
+        }
+      }
+    } else if (r == 50 && loserId != null) {
+      final fifthPlaceM = await client
+          .from('matches')
+          .select('id')
+          .eq('tournament_id', tId)
+          .eq('stage', stage)
+          .eq('round', 51);
+      if (fifthPlaceM.isNotEmpty) {
+        await _assignPlayerToSlotIfNeeded(
+          client,
+          fifthPlaceM.first['id'].toString(),
+          isP1,
+          winnerId,
+        );
+      }
+      final seventhPlaceM = await client
+          .from('matches')
+          .select('id')
+          .eq('tournament_id', tId)
+          .eq('stage', stage)
+          .eq('round', 52);
+      if (seventhPlaceM.isNotEmpty) {
+        await _assignPlayerToSlotIfNeeded(
+          client,
+          seventhPlaceM.first['id'].toString(),
+          isP1,
+          loserId,
+        );
+      }
+    }
+  }
+
+  /// Užtikrina bracket perkėlimą po serverio auto-complete (be Flutter).
+  static Future<void> reconcileBracketAdvances(String tournamentId) async {
+    final client = Supabase.instance.client;
+    final matches = await client
+        .from('matches')
+        .select()
+        .eq('tournament_id', tournamentId)
+        .eq('status', 'completed')
+        .not('winner_id', 'is', null)
+        .limit(QueryLimits.tournamentMatches);
+
+    for (final raw in matches) {
+      final match = Map<String, dynamic>.from(raw as Map);
+      await moveWinnerToNextRound(match, match['winner_id'].toString());
+    }
+  }
+
+  // =========================================================================
   // AUTOMATINIS RP IR XP IŠDALINIMAS BEI TURNYRO UŽDARYMAS
   // =========================================================================
 
@@ -876,9 +1104,9 @@ class TournamentEngine {
 
         int earnedRp = 0;
 
-        // --- 1. XP TAŠKAI (Už aktyvumą) ---
-        // 50 bazė + 20 už realiai sužaistą mačą + 30 už pergalę
-        int earnedXp = 50 + (matchesPlayed * 20) + (matchesWon * 30);
+        // --- 1. XP (archyvinis snapshot — profilyje skaičiuoja DB trigger per mačą) ---
+        int earnedXp = (matchesWon * 25) +
+            ((matchesPlayed - matchesWon).clamp(0, matchesPlayed) * 10);
 
         // --- 2. RP TAŠKAI (Pagal ATP Grand Slam stilių) ---
         if (place == 1) {
@@ -905,7 +1133,6 @@ class TournamentEngine {
             })
             .eq('id', playerStats[uid]!['participant_id']);
 
-        await UserSportsService.addXp(uid, earnedXp);
         await UserSportsService.awardRp(
           userId: uid,
           sportName: sportName,
