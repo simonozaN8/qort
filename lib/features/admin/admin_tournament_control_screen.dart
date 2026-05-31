@@ -162,7 +162,69 @@ class _AdminTournamentControlScreenState
       'end_date': null,
       'advance_to': 'none',
       'drop_to': 'none',
+      'advance_mode': 'final',
+      'drop_mode': 'out',
     };
+  }
+
+  List<Map<String, dynamic>> _stagesWithDeferredRouting() {
+    return _stages.where((s) {
+      final adv = s['advance_to']?.toString() ?? 'none';
+      final drp = s['drop_to']?.toString() ?? 'none';
+      return adv == 'later' || drp == 'later';
+    }).toList();
+  }
+
+  Widget _buildDeferredRoutingBanner() {
+    final deferred = _stagesWithDeferredRouting();
+    if (deferred.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      children: deferred.map((stage) {
+        final name = stage['name']?.toString() ?? 'Etapas';
+        final adv = stage['advance_to']?.toString() == 'later';
+        final drp = stage['drop_to']?.toString() == 'later';
+        final parts = <String>[];
+        if (adv) parts.add('laimėtojų');
+        if (drp) parts.add('pralaimėtojų');
+        final routingLabel = parts.join(' ir ');
+
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: const Color(0xFFF59E0B).withValues(alpha: 0.55),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                LucideIcons.alertTriangle,
+                size: 20,
+                color: Color(0xFFF59E0B),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '$name turi atidėtą $routingLabel routing\'ą. '
+                  'Po etapo pabaigos sukurk sekantį etapą.',
+                  style: const TextStyle(
+                    color: QortColors.textPrimary,
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
   }
 
   List<Map<String, dynamic>> _stagesForDivision(String division) {
@@ -209,6 +271,46 @@ class _AdminTournamentControlScreenState
       required bool isAdvance,
       required String targetId,
     }) {
+      if (targetId == 'later') {
+        final accentColor =
+            isAdvance ? QortDesignSystem.training : QortDesignSystem.error;
+        final emoji = isAdvance ? '🏆' : '💔';
+        final label = isAdvance ? 'Laimėtojai' : 'Pralaimėtojai';
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 28,
+                child: Text(
+                  branch,
+                  style: const TextStyle(
+                    color: QortDesignSystem.textMuted,
+                    fontSize: 13,
+                    height: 1.35,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+              Text(emoji, style: const TextStyle(fontSize: 13, height: 1.35)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '$label → Sekantis etapas (vėliau)',
+                  style: TextStyle(
+                    color: accentColor,
+                    fontSize: 12,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+
       final target = _findStageById(targetId, divStages);
       final accentColor =
           isAdvance ? QortDesignSystem.training : QortDesignSystem.error;
@@ -320,6 +422,7 @@ class _AdminTournamentControlScreenState
   List<String> _validRoutingIdsForDivision(String division) {
     return [
       'none',
+      'later',
       ..._stagesForDivision(division).map((s) => s['id'].toString()),
     ];
   }
@@ -328,6 +431,7 @@ class _AdminTournamentControlScreenState
     required String division,
     required String excludeStageId,
     required bool forAdvance,
+    List<Map<String, dynamic>> extraStages = const [],
   }) {
     final noneLabel = forAdvance
         ? 'Niekur — finalas (čia baigiasi kelias)'
@@ -335,11 +439,24 @@ class _AdminTournamentControlScreenState
 
     final items = <DropdownMenuItem<String>>[
       DropdownMenuItem(value: 'none', child: Text(noneLabel)),
+      DropdownMenuItem(
+        value: 'later',
+        child: Text(
+          forAdvance
+              ? 'Sukursiu sekantį etapą vėliau'
+              : 'Sukursiu paguodos etapą vėliau',
+        ),
+      ),
     ];
 
-    for (final s in _stagesForDivision(division)) {
+    final seen = <String>{'none', 'later'};
+    for (final s in [
+      ..._stagesForDivision(division),
+      ...extraStages,
+    ]) {
       final sId = s['id'].toString();
-      if (sId == excludeStageId) continue;
+      if (sId == excludeStageId || seen.contains(sId)) continue;
+      seen.add(sId);
       items.add(
         DropdownMenuItem(
           value: sId,
@@ -362,7 +479,9 @@ class _AdminTournamentControlScreenState
       final id = s['id'].toString();
       for (final key in ['advance_to', 'drop_to']) {
         final target = s[key]?.toString() ?? 'none';
-        if (target != 'none' && ids.contains(target)) {
+        if (target != 'none' &&
+            target != 'later' &&
+            ids.contains(target)) {
           adjacency[id]!.add(target);
         }
       }
@@ -429,7 +548,9 @@ class _AdminTournamentControlScreenState
           stage[key] = 'none';
           changed = true;
           messages.add('Etapas negali nukreipti į save patį.');
-        } else if (value != 'none' && !validIds.contains(value)) {
+        } else if (value != 'none' &&
+            value != 'later' &&
+            !validIds.contains(value)) {
           stage[key] = 'none';
           changed = true;
           messages.add(
@@ -459,7 +580,7 @@ class _AdminTournamentControlScreenState
     for (final s in divStages) {
       for (final key in ['advance_to', 'drop_to']) {
         final target = s[key]?.toString() ?? 'none';
-        if (target != 'none') targetIds.add(target);
+        if (target != 'none' && target != 'later') targetIds.add(target);
       }
     }
 
@@ -468,7 +589,8 @@ class _AdminTournamentControlScreenState
       final stageId = stage['id'].toString();
       final advanceTo = stage['advance_to']?.toString() ?? 'none';
       final dropTo = stage['drop_to']?.toString() ?? 'none';
-      final hasOutgoing = advanceTo != 'none' || dropTo != 'none';
+      final hasOutgoing =
+          advanceTo != 'none' || dropTo != 'none';
       final isTarget = targetIds.contains(stageId);
       final isLast = i == divStages.length - 1;
 
@@ -536,7 +658,7 @@ class _AdminTournamentControlScreenState
     initialDraft['id'] =
         'stage_${DateTime.now().millisecondsSinceEpoch}_$nextIndex';
 
-    final result = await showModalBottomSheet<Map<String, dynamic>>(
+    final result = await showModalBottomSheet<List<Map<String, dynamic>>>(
       context: context,
       isScrollControlled: true,
       backgroundColor: QortColors.surface,
@@ -553,6 +675,10 @@ class _AdminTournamentControlScreenState
             child: _AddStageWizardSheet(
               division: division,
               initialDraft: initialDraft,
+              existingStages: _stagesForDivision(division)
+                  .map((s) => Map<String, dynamic>.from(s))
+                  .toList(),
+              createDefaultStage: _createDefaultStage,
               allFormats: _allFormats,
               comingSoonFormats: _comingSoonFormats,
               placesOptions: _placesOptions,
@@ -565,18 +691,24 @@ class _AdminTournamentControlScreenState
                 required String division,
                 required String excludeStageId,
                 required bool forAdvance,
+                required List<Map<String, dynamic>> extraStages,
               }) =>
                   _buildRoutingDropdownItems(
                     division: division,
                     excludeStageId: excludeStageId,
                     forAdvance: forAdvance,
+                    extraStages: extraStages,
                   ),
-              routingTargetLabelForId: (targetId) {
+              routingTargetLabelForId: (targetId, extraStages) {
                 if (targetId == 'none') return null;
-                final stage = _findStageById(
-                  targetId,
-                  _stagesForDivision(division),
-                );
+                if (targetId == 'later') {
+                  return 'Sukursiu sekantį etapą vėliau';
+                }
+                final all = [
+                  ..._stagesForDivision(division),
+                  ...extraStages,
+                ];
+                final stage = _findStageById(targetId, all);
                 return stage != null ? _routingTargetLabel(stage) : null;
               },
             ),
@@ -585,8 +717,8 @@ class _AdminTournamentControlScreenState
       },
     );
 
-    if (result != null && mounted) {
-      setState(() => _stages.add(result));
+    if (result != null && result.isNotEmpty && mounted) {
+      setState(() => _stages.addAll(result));
     }
   }
 
@@ -1684,6 +1816,8 @@ class _AdminTournamentControlScreenState
           ),
         ),
         const SizedBox(height: 30),
+
+        _buildDeferredRoutingBanner(),
 
         _btn(
           "🤖 GENERUOTI BOTUS TESTAVIMUI",
@@ -3251,11 +3385,445 @@ typedef _WizardRoutingItemsBuilder = List<DropdownMenuItem<String>> Function({
   required String division,
   required String excludeStageId,
   required bool forAdvance,
+  required List<Map<String, dynamic>> extraStages,
 });
+
+typedef _CreateDefaultStageFn = Map<String, dynamic> Function(
+  int index,
+  String division,
+);
+
+typedef _WizardRoutingLabelFn = String? Function(
+  String targetId,
+  List<Map<String, dynamic>> extraStages,
+);
+
+// ── Turnyro etapų medžio diagrama ──
+
+class _TreeStageNode {
+  static const boxWidth = 128.0;
+  static const boxHeight = 56.0;
+
+  final String id;
+  final String label;
+  final String format;
+  final String participantsHint;
+  final bool isDraft;
+  final bool isDeferred;
+  Offset position;
+
+  _TreeStageNode({
+    required this.id,
+    required this.label,
+    required this.format,
+    required this.participantsHint,
+    this.isDraft = false,
+    this.isDeferred = false,
+    this.position = Offset.zero,
+  });
+}
+
+class _TreeEdge {
+  final Offset from;
+  final Offset to;
+  final bool isAdvance;
+
+  const _TreeEdge({
+    required this.from,
+    required this.to,
+    required this.isAdvance,
+  });
+}
+
+class _TreeLayoutResult {
+  final List<_TreeStageNode> nodes;
+  final List<_TreeEdge> edges;
+  final double width;
+  final double height;
+
+  const _TreeLayoutResult({
+    required this.nodes,
+    required this.edges,
+    required this.width,
+    required this.height,
+  });
+}
+
+class _TreeLayoutEngine {
+  static const _hGap = 28.0;
+  static const _vGap = 52.0;
+  static const _pad = 16.0;
+
+  static String _participantsHint(Map<String, dynamic> stage) {
+    final initial = stage['initial_participants'];
+    if (initial != null) return '$initial dalyv.';
+    final groups = (stage['group_count'] as num?)?.toInt();
+    final adv = (stage['advancing_players'] as num?)?.toInt();
+    if (groups != null && adv != null) {
+      return '$groups grp. × top $adv';
+    }
+    return '—';
+  }
+
+  static _TreeLayoutResult compute({
+    required List<Map<String, dynamic>> stages,
+    String? draftStageId,
+  }) {
+    if (stages.isEmpty) {
+      return const _TreeLayoutResult(
+        nodes: [],
+        edges: [],
+        width: 200,
+        height: 80,
+      );
+    }
+
+    final stageById = <String, Map<String, dynamic>>{};
+    for (final s in stages) {
+      stageById[s['id'].toString()] = s;
+    }
+
+    final childRefs = <String>{};
+    final childrenOf = <String, List<({String id, bool advance})>>{};
+
+    void linkChild(String parentId, String rawTarget, bool advance) {
+      if (rawTarget == 'none') return;
+      final childId = rawTarget == 'later'
+          ? '_later_${advance ? 'adv' : 'drop'}_$parentId'
+          : rawTarget;
+      childrenOf.putIfAbsent(parentId, () => []);
+      if (childrenOf[parentId]!.any((c) => c.id == childId)) return;
+      childrenOf[parentId]!.add((id: childId, advance: advance));
+      if (!childId.startsWith('_later_')) {
+        childRefs.add(childId);
+      }
+    }
+
+    for (final s in stages) {
+      final id = s['id'].toString();
+      linkChild(id, s['advance_to']?.toString() ?? 'none', true);
+      linkChild(id, s['drop_to']?.toString() ?? 'none', false);
+    }
+
+    var roots = stageById.keys.where((id) => !childRefs.contains(id)).toList();
+    if (roots.isEmpty) roots = [stageById.keys.first];
+
+    final nodes = <_TreeStageNode>[];
+    final edges = <_TreeEdge>[];
+    var cursorX = _pad;
+
+    for (final rootId in roots) {
+      cursorX += _layoutSubtree(
+        rootId: rootId,
+        stageById: stageById,
+        childrenOf: childrenOf,
+        draftStageId: draftStageId,
+        depth: 0,
+        leftX: cursorX,
+        nodes: nodes,
+        edges: edges,
+      );
+      cursorX += _hGap;
+    }
+
+    var maxX = _pad * 2;
+    var maxY = _pad * 2;
+    for (final n in nodes) {
+      maxX = max(maxX, n.position.dx + _TreeStageNode.boxWidth + _pad);
+      maxY = max(maxY, n.position.dy + _TreeStageNode.boxHeight + _pad);
+    }
+
+    return _TreeLayoutResult(
+      nodes: nodes,
+      edges: edges,
+      width: maxX,
+      height: maxY,
+    );
+  }
+
+  static double _layoutSubtree({
+    required String rootId,
+    required Map<String, Map<String, dynamic>> stageById,
+    required Map<String, List<({String id, bool advance})>> childrenOf,
+    required String? draftStageId,
+    required int depth,
+    required double leftX,
+    required List<_TreeStageNode> nodes,
+    required List<_TreeEdge> edges,
+  }) {
+    final children = childrenOf[rootId] ?? [];
+
+    if (children.isEmpty) {
+      _addNode(
+        rootId: rootId,
+        stageById: stageById,
+        draftStageId: draftStageId,
+        depth: depth,
+        x: leftX,
+        nodes: nodes,
+      );
+      return _TreeStageNode.boxWidth;
+    }
+
+    var childLeft = leftX;
+    final childCenters = <double>[];
+    for (final child in children) {
+      final w = _layoutSubtree(
+        rootId: child.id,
+        stageById: stageById,
+        childrenOf: childrenOf,
+        draftStageId: draftStageId,
+        depth: depth + 1,
+        leftX: childLeft,
+        nodes: nodes,
+        edges: edges,
+      );
+      childCenters.add(childLeft + w / 2);
+      childLeft += w + _hGap;
+    }
+
+    final subtreeWidth = childLeft - leftX - _hGap;
+    final parentCenterX = (childCenters.first + childCenters.last) / 2;
+    final parentX = parentCenterX - _TreeStageNode.boxWidth / 2;
+
+    final parentNode = _addNode(
+      rootId: rootId,
+      stageById: stageById,
+      draftStageId: draftStageId,
+      depth: depth,
+      x: parentX,
+      nodes: nodes,
+    );
+
+    for (var i = 0; i < children.length; i++) {
+      final child = children[i];
+      final childNode = nodes.firstWhere((n) => n.id == child.id);
+      final from = Offset(
+        parentNode.position.dx + _TreeStageNode.boxWidth / 2,
+        parentNode.position.dy + _TreeStageNode.boxHeight,
+      );
+      final to = Offset(
+        childNode.position.dx + _TreeStageNode.boxWidth / 2,
+        childNode.position.dy,
+      );
+      edges.add(_TreeEdge(from: from, to: to, isAdvance: child.advance));
+    }
+
+    return subtreeWidth;
+  }
+
+  static _TreeStageNode _addNode({
+    required String rootId,
+    required Map<String, Map<String, dynamic>> stageById,
+    required String? draftStageId,
+    required int depth,
+    required double x,
+    required List<_TreeStageNode> nodes,
+  }) {
+    if (nodes.any((n) => n.id == rootId)) {
+      return nodes.firstWhere((n) => n.id == rootId);
+    }
+
+    final isDeferred = rootId.startsWith('_later_');
+    Map<String, dynamic>? stage = stageById[rootId];
+    late _TreeStageNode node;
+
+    if (isDeferred) {
+      node = _TreeStageNode(
+        id: rootId,
+        label: 'Sekantis etapas',
+        format: 'Sukursiu vėliau',
+        participantsHint: '—',
+        isDeferred: true,
+        position: Offset(x, _pad + depth * (_TreeStageNode.boxHeight + _vGap)),
+      );
+    } else {
+      stage ??= {'id': rootId, 'name': 'Etapas', 'format': ''};
+      node = _TreeStageNode(
+        id: rootId,
+        label: stage['name']?.toString() ?? 'Etapas',
+        format: stage['format']?.toString() ?? '',
+        participantsHint: _participantsHint(stage),
+        isDraft: rootId == draftStageId,
+        position: Offset(x, _pad + depth * (_TreeStageNode.boxHeight + _vGap)),
+      );
+    }
+
+    nodes.add(node);
+    return node;
+  }
+}
+
+class _TournamentTreePainter extends CustomPainter {
+  final List<_TreeEdge> edges;
+
+  _TournamentTreePainter({required this.edges});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final edge in edges) {
+      final paint = Paint()
+        ..color = edge.isAdvance
+            ? QortDesignSystem.training
+            : QortDesignSystem.error
+        ..strokeWidth = 2
+        ..style = PaintingStyle.stroke;
+
+      final midY = (edge.from.dy + edge.to.dy) / 2;
+      final path = Path()
+        ..moveTo(edge.from.dx, edge.from.dy)
+        ..lineTo(edge.from.dx, midY)
+        ..lineTo(edge.to.dx, midY)
+        ..lineTo(edge.to.dx, edge.to.dy);
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _TournamentTreePainter oldDelegate) =>
+      oldDelegate.edges != edges;
+}
+
+class _TournamentTreeDiagram extends StatelessWidget {
+  final List<Map<String, dynamic>> savedStages;
+  final Map<String, dynamic> draftStage;
+  final List<Map<String, dynamic>> pendingChildStages;
+
+  const _TournamentTreeDiagram({
+    required this.savedStages,
+    required this.draftStage,
+    required this.pendingChildStages,
+  });
+
+  List<Map<String, dynamic>> get _allStages {
+    final seen = <String>{};
+    final list = <Map<String, dynamic>>[];
+    for (final s in [
+      ...savedStages,
+      ...pendingChildStages,
+      draftStage,
+    ]) {
+      final id = s['id'].toString();
+      if (seen.add(id)) list.add(s);
+    }
+    return list;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final layout = _TreeLayoutEngine.compute(
+      stages: _allStages,
+      draftStageId: draftStage['id'].toString(),
+    );
+
+    if (layout.nodes.isEmpty) {
+      return Container(
+        height: 80,
+        alignment: Alignment.center,
+        child: const Text(
+          'Pridėk etapą — medis pasirodys čia.',
+          style: TextStyle(color: QortDesignSystem.textMuted, fontSize: 12),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: QortColors.background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: QortColors.border),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.vertical,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.all(8),
+          child: SizedBox(
+            width: layout.width,
+            height: layout.height,
+            child: Stack(
+              children: [
+                CustomPaint(
+                  size: Size(layout.width, layout.height),
+                  painter: _TournamentTreePainter(edges: layout.edges),
+                ),
+                ...layout.nodes.map((node) {
+                  final borderColor = node.isDraft
+                      ? QortDesignSystem.training
+                      : node.isDeferred
+                          ? const Color(0xFFF59E0B)
+                          : QortColors.border;
+                  return Positioned(
+                    left: node.position.dx,
+                    top: node.position.dy,
+                    child: Tooltip(
+                      message: '${node.label}\n${node.format}\n'
+                          '${node.participantsHint}',
+                      child: Container(
+                        width: _TreeStageNode.boxWidth,
+                        height: _TreeStageNode.boxHeight,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: node.isDraft
+                              ? QortDesignSystem.training
+                                  .withValues(alpha: 0.12)
+                              : QortColors.surface,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: borderColor,
+                            width: node.isDraft ? 2 : 1,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              node.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: QortColors.textPrimary,
+                                fontSize: 11,
+                                fontWeight: node.isDraft
+                                    ? FontWeight.bold
+                                    : FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              node.isDeferred
+                                  ? 'vėliau'
+                                  : node.participantsHint,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: QortDesignSystem.textMuted,
+                                fontSize: 9,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _AddStageWizardSheet extends StatefulWidget {
   final String division;
   final Map<String, dynamic> initialDraft;
+  final List<Map<String, dynamic>> existingStages;
+  final _CreateDefaultStageFn createDefaultStage;
   final List<String> allFormats;
   final Set<String> comingSoonFormats;
   final List<String> placesOptions;
@@ -3265,11 +3833,13 @@ class _AddStageWizardSheet extends StatefulWidget {
   final bool Function(String format) isComingSoonFormat;
   final VoidCallback onComingSoonFormat;
   final _WizardRoutingItemsBuilder buildRoutingItems;
-  final String? Function(String targetId) routingTargetLabelForId;
+  final _WizardRoutingLabelFn routingTargetLabelForId;
 
   const _AddStageWizardSheet({
     required this.division,
     required this.initialDraft,
+    required this.existingStages,
+    required this.createDefaultStage,
     required this.allFormats,
     required this.comingSoonFormats,
     required this.placesOptions,
@@ -3297,12 +3867,47 @@ class _AddStageWizardSheetState extends State<_AddStageWizardSheet> {
   late Map<String, dynamic> _draft;
   int _step = 0;
   bool _step2Skipped = false;
+  final List<Map<String, dynamic>> _pendingChildStages = [];
 
   @override
   void initState() {
     super.initState();
     _draft = Map<String, dynamic>.from(widget.initialDraft);
+    _draft.putIfAbsent('advance_to', () => 'none');
+    _draft.putIfAbsent('drop_to', () => 'none');
+    if (!_draft.containsKey('advance_mode')) {
+      _draft['advance_mode'] = switch (_draft['advance_to']?.toString()) {
+        'later' => 'later',
+        'none' => 'final',
+        _ => 'existing',
+      };
+    }
+    if (!_draft.containsKey('drop_mode')) {
+      _draft['drop_mode'] = switch (_draft['drop_to']?.toString()) {
+        'later' => 'later',
+        'none' => 'out',
+        _ => 'existing',
+      };
+    }
   }
+
+  List<String> _routingTargetIds({required bool forAdvance}) {
+    final items = widget.buildRoutingItems(
+      division: widget.division,
+      excludeStageId: _draftId,
+      forAdvance: forAdvance,
+      extraStages: [..._pendingChildStages],
+    );
+    return items
+        .map((i) => i.value)
+        .whereType<String>()
+        .where((v) => v != 'none' && v != 'later')
+        .toList();
+  }
+
+  List<Map<String, dynamic>> get _extraStagesForRouting => [
+        ..._pendingChildStages,
+      ];
 
   String get _format => _draft['format']?.toString() ?? 'Round Robin (Grupės)';
 
@@ -3372,7 +3977,214 @@ class _AddStageWizardSheetState extends State<_AddStageWizardSheet> {
   }
 
   void _confirmAdd() {
-    Navigator.pop(context, Map<String, dynamic>.from(_draft));
+    final stages = [
+      ..._pendingChildStages.map((s) => Map<String, dynamic>.from(s)),
+      Map<String, dynamic>.from(_draft),
+    ];
+    Navigator.pop(context, stages);
+  }
+
+  void _applyRoutingMode({
+    required String modeKey,
+    required String targetKey,
+    required String mode,
+    required bool forAdvance,
+  }) {
+    setState(() {
+      _draft[modeKey] = mode;
+      switch (mode) {
+        case 'final':
+        case 'out':
+          _draft[targetKey] = 'none';
+          break;
+        case 'later':
+          _draft[targetKey] = 'later';
+          break;
+        case 'existing':
+          final ids = _routingTargetIds(forAdvance: forAdvance);
+          final current = _draft[targetKey]?.toString();
+          if (current == null ||
+              current == 'none' ||
+              current == 'later' ||
+              !ids.contains(current)) {
+            _draft[targetKey] = ids.isNotEmpty ? ids.first : 'none';
+            if (ids.isEmpty) {
+              _draft[modeKey] = forAdvance ? 'final' : 'out';
+            }
+          }
+          break;
+        case 'create_now':
+          break;
+      }
+    });
+  }
+
+  Future<void> _openChildWizard(String targetKey) async {
+    final forAdvance = targetKey == 'advance_to';
+    final nextIndex =
+        widget.existingStages.length + _pendingChildStages.length + 1;
+    final childDraft = widget.createDefaultStage(nextIndex, widget.division);
+    childDraft['id'] =
+        'stage_${DateTime.now().millisecondsSinceEpoch}_$nextIndex';
+    childDraft['name'] = forAdvance ? 'Finalas' : 'Paguodos turnyras';
+    childDraft['format'] = 'Single Elimination (Atkrintamosios)';
+    childDraft['playoff_places'] =
+        forAdvance ? 'Dėl 3 vietos' : 'Visas vietos (5, 7, 9...)';
+
+    final result =
+        await Navigator.of(context, rootNavigator: true).push<List<Map<String, dynamic>>>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (ctx) => Scaffold(
+          backgroundColor: QortColors.surface,
+          body: SafeArea(
+            child: _AddStageWizardSheet(
+              division: widget.division,
+              initialDraft: childDraft,
+              existingStages: [
+                ...widget.existingStages,
+                ..._pendingChildStages,
+                Map<String, dynamic>.from(_draft),
+              ],
+              createDefaultStage: widget.createDefaultStage,
+              allFormats: widget.allFormats,
+              comingSoonFormats: widget.comingSoonFormats,
+              placesOptions: widget.placesOptions,
+              formatDropdownLabel: widget.formatDropdownLabel,
+              formatDescription: widget.formatDescription,
+              isLadderFormat: widget.isLadderFormat,
+              isComingSoonFormat: widget.isComingSoonFormat,
+              onComingSoonFormat: widget.onComingSoonFormat,
+              buildRoutingItems: widget.buildRoutingItems,
+              routingTargetLabelForId: widget.routingTargetLabelForId,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (!mounted || result == null || result.isEmpty) return;
+
+    setState(() {
+      for (final stage in result) {
+        final id = stage['id'].toString();
+        if (!_pendingChildStages.any((s) => s['id'].toString() == id) &&
+            id != _draftId) {
+          _pendingChildStages.add(Map<String, dynamic>.from(stage));
+        }
+      }
+      final created = result.last;
+      _draft[targetKey] = created['id'];
+      _draft[forAdvance ? 'advance_mode' : 'drop_mode'] = 'existing';
+    });
+  }
+
+  Widget _buildExistingTargetDropdown({
+    required String targetKey,
+    required bool forAdvance,
+  }) {
+    final accent =
+        forAdvance ? QortDesignSystem.training : QortDesignSystem.error;
+    final value = _draft[targetKey]?.toString() ?? 'none';
+    final items = widget.buildRoutingItems(
+      division: widget.division,
+      excludeStageId: _draftId,
+      forAdvance: forAdvance,
+      extraStages: _extraStagesForRouting,
+    );
+    final filteredItems = items
+        .where((i) => i.value != 'none' && i.value != 'later')
+        .toList();
+    final validItemValues =
+        filteredItems.map((i) => i.value).whereType<String>().toList();
+    var dropdownValue = value;
+    if (!validItemValues.contains(dropdownValue)) {
+      dropdownValue =
+          validItemValues.isNotEmpty ? validItemValues.first : 'none';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 8, top: 4, bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        decoration: BoxDecoration(
+          color: accent.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: accent.withValues(alpha: 0.45)),
+        ),
+        child: filteredItems.isEmpty
+            ? const Text(
+                'Nėra kitų etapų — sukurk naują arba pasirink „vėliau“.',
+                style: TextStyle(fontSize: 12, color: QortColors.textSecondary),
+              )
+            : DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: validItemValues.contains(dropdownValue)
+                      ? dropdownValue
+                      : validItemValues.first,
+                  isExpanded: true,
+                  dropdownColor: QortColors.surface,
+                  items: filteredItems,
+                  onChanged: (v) => setState(() => _draft[targetKey] = v),
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _buildRoutingChoiceSection({
+    required String title,
+    required Color accent,
+    required String modeKey,
+    required String targetKey,
+    required bool forAdvance,
+    required List<(String mode, String label)> options,
+  }) {
+    final mode = _draft[modeKey]?.toString() ??
+        (forAdvance ? 'final' : 'out');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: GoogleFonts.bebasNeue(
+            color: accent,
+            fontSize: 14,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...options.map((opt) {
+          return RadioListTile<String>(
+            value: opt.$1,
+            groupValue: mode,
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            activeColor: accent,
+            title: Text(opt.$2, style: const TextStyle(fontSize: 13)),
+            onChanged: (v) {
+              if (v == null) return;
+              if (v == 'create_now') {
+                _openChildWizard(targetKey);
+                return;
+              }
+              _applyRoutingMode(
+                modeKey: modeKey,
+                targetKey: targetKey,
+                mode: v,
+                forAdvance: forAdvance,
+              );
+            },
+          );
+        }),
+        if (mode == 'existing')
+          _buildExistingTargetDropdown(
+            targetKey: targetKey,
+            forAdvance: forAdvance,
+          ),
+      ],
+    );
   }
 
   Widget _wizardDropdown({
@@ -3782,60 +4594,6 @@ class _AddStageWizardSheetState extends State<_AddStageWizardSheet> {
     );
   }
 
-  Widget _buildRoutingDropdown({
-    required String fieldKey,
-    required bool forAdvance,
-  }) {
-    final accentColor =
-        forAdvance ? QortDesignSystem.training : QortDesignSystem.error;
-    final label = forAdvance
-        ? '🏆 KUR KELIAUJA LAIMĖTOJAI?'
-        : '💔 KUR KELIAUJA PRALAIMĖTOJAI?';
-    final value = _draft[fieldKey]?.toString() ?? 'none';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.bebasNeue(
-            color: accentColor,
-            fontSize: 14,
-            letterSpacing: 1,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
-          decoration: BoxDecoration(
-            color: accentColor.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: accentColor.withValues(alpha: 0.45)),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: value,
-              isExpanded: true,
-              dropdownColor: QortColors.surface,
-              style: const TextStyle(
-                color: QortColors.textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
-              items: widget.buildRoutingItems(
-                division: widget.division,
-                excludeStageId: _draftId,
-                forAdvance: forAdvance,
-              ),
-              onChanged: (v) => setState(() => _draft[fieldKey] = v),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildStep3Routing() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3857,22 +4615,77 @@ class _AddStageWizardSheetState extends State<_AddStageWizardSheet> {
             height: 1.4,
           ),
         ),
-        const SizedBox(height: 32),
-        _buildRoutingDropdown(fieldKey: 'advance_to', forAdvance: true),
-        const SizedBox(height: 32),
-        _buildRoutingDropdown(fieldKey: 'drop_to', forAdvance: false),
+        const SizedBox(height: 16),
+        Text(
+          'TURNYRO STRUKTŪRA',
+          style: GoogleFonts.bebasNeue(
+            color: QortDesignSystem.textMuted,
+            fontSize: 12,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 220,
+          child: _TournamentTreeDiagram(
+            savedStages: widget.existingStages,
+            draftStage: _draft,
+            pendingChildStages: _pendingChildStages,
+          ),
+        ),
+        const SizedBox(height: 24),
+        _buildRoutingChoiceSection(
+          title: '🏆 KUR KELIAUJA LAIMĖTOJAI?',
+          accent: QortDesignSystem.training,
+          modeKey: 'advance_mode',
+          targetKey: 'advance_to',
+          forAdvance: true,
+          options: const [
+            ('existing', 'Į esamą etapą'),
+            ('final', 'Čia finalas (turnyro pabaiga)'),
+            ('create_now', 'Sukurti naują etapą dabar'),
+            ('later', 'Sukursiu sekantį etapą vėliau'),
+          ],
+        ),
+        const SizedBox(height: 24),
+        _buildRoutingChoiceSection(
+          title: '💔 KUR KELIAUJA PRALAIMĖTOJAI?',
+          accent: QortDesignSystem.error,
+          modeKey: 'drop_mode',
+          targetKey: 'drop_to',
+          forAdvance: false,
+          options: const [
+            ('existing', 'Į esamą etapą (paguoda / kitas)'),
+            ('out', 'Iškrenta iš turnyro'),
+            ('create_now', 'Sukurti naują etapą dabar'),
+            ('later', 'Sukursiu sekantį etapą vėliau'),
+          ],
+        ),
       ],
     );
   }
 
   String _routingSummaryLine(String fieldKey, {required bool forAdvance}) {
+    final modeKey = forAdvance ? 'advance_mode' : 'drop_mode';
+    final mode = _draft[modeKey]?.toString();
+    if (mode == 'later') return 'Sukursiu sekantį etapą vėliau';
+    if (mode == 'final' || (mode == null && !forAdvance && (_draft[fieldKey]?.toString() ?? 'none') == 'none')) {
+      if (forAdvance) return 'Niekur — finalas (čia baigiasi kelias)';
+    }
+    if (mode == 'out') return 'Niekur — iškrenta iš turnyro';
+
     final targetId = _draft[fieldKey]?.toString() ?? 'none';
     if (targetId == 'none') {
       return forAdvance
           ? 'Niekur — finalas (čia baigiasi kelias)'
           : 'Niekur — iškrenta iš turnyro';
     }
-    return widget.routingTargetLabelForId(targetId) ?? '(nerastas etapas)';
+    if (targetId == 'later') return 'Sukursiu sekantį etapą vėliau';
+    return widget.routingTargetLabelForId(
+          targetId,
+          _extraStagesForRouting,
+        ) ??
+        '(nerastas etapas)';
   }
 
   String _settingsSummary() {
