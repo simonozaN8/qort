@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../constants/query_limits.dart';
 import 'match_auto_complete_service.dart';
+import 'match_auto_activate_service.dart';
 import 'user_profile_loader.dart';
 
 class HomeDashboardData {
@@ -102,6 +103,7 @@ class HomeDashboardService {
         .limit(QueryLimits.myTournaments);
 
     await MatchAutoCompleteService.processForUser(userId);
+    await MatchAutoActivateService.processForUser(userId);
 
     final myMatchesRes = await _client
         .from('matches')

@@ -13,6 +13,7 @@ import 'tournament_chat_tab.dart';
 import 'schedule_tab.dart';
 import 'ladder_tab.dart';
 import 'tournament_engine.dart';
+import '../../core/services/match_auto_activate_service.dart';
 import '../../core/constants/query_limits.dart';
 import '../../core/constants/match_constants.dart';
 import '../../core/models/sport_catalog_entry.dart';
@@ -80,6 +81,7 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
       final client = Supabase.instance.client;
 
       await _checkAutoConfirmations(tId);
+      await MatchAutoActivateService.processForTournament(tId);
       await TournamentEngine.reconcileBracketAdvances(tId);
 
       final results = await Future.wait([
@@ -1116,6 +1118,7 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
                     );
                     _loadAllData();
                   },
+                  onMatchesActivated: _loadAllData,
                 ),
                 _buildParticipantsTab(),
                 TournamentChatTab(

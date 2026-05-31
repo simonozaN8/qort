@@ -5,6 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/qort_colors.dart';
+import '../../core/constants/match_constants.dart';
+import '../../core/services/match_auto_activate_service.dart';
 import '../../core/widgets/qort_form_help.dart';
 
 class ScheduleTab extends StatefulWidget {
@@ -18,6 +20,7 @@ class ScheduleTab extends StatefulWidget {
   final Function(Map<String, dynamic>) onEnterScore;
   final Function(Map<String, dynamic>) onConfirmScore;
   final Function(Map<String, dynamic>) onDisputeScore;
+  final VoidCallback? onMatchesActivated;
 
   const ScheduleTab({
     super.key,
@@ -31,6 +34,7 @@ class ScheduleTab extends StatefulWidget {
     required this.onEnterScore,
     required this.onConfirmScore,
     required this.onDisputeScore,
+    this.onMatchesActivated,
   });
 
   @override
@@ -39,8 +43,37 @@ class ScheduleTab extends StatefulWidget {
 
 class _ScheduleTabState extends State<ScheduleTab> {
   bool _isUpdating = false;
+  bool _autoActivateChecked = false;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = "";
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _runAutoActivate());
+  }
+
+  @override
+  void didUpdateWidget(covariant ScheduleTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.matches != widget.matches) {
+      _autoActivateChecked = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _runAutoActivate());
+    }
+  }
+
+  Future<void> _runAutoActivate() async {
+    if (_autoActivateChecked || !mounted) return;
+    _autoActivateChecked = true;
+    try {
+      final activated = await MatchAutoActivateService.processListedMatches(
+        widget.matches,
+      );
+      if (activated && mounted) {
+        widget.onMatchesActivated?.call();
+      }
+    } catch (_) {}
+  }
 
   String _getPlayerName(String? id) {
     if (id == null) return "TBD (Laukiama varžovo)";

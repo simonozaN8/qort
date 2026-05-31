@@ -829,7 +829,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
     bool canEnterScore = false;
     if (matchDate != null && match['status'] != 'played_waiting') {
-      if (DateTime.now().isAfter(matchDate.add(const Duration(minutes: 15)))) {
+      if (DateTime.now().isAfter(
+        matchDate.add(MatchConstants.matchActivationGracePeriod),
+      )) {
         canEnterScore = true;
       }
     }

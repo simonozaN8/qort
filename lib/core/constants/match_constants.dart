@@ -5,6 +5,9 @@ class MatchConstants {
   /// Kiek laiko varžovas turi patvirtinti rezultatą prieš auto-complete.
   static const Duration scoreConfirmationTimeout = Duration(hours: 1);
 
+  /// Po šio intervalo nuo scheduled_time pending mačas tampa active.
+  static const Duration matchActivationGracePeriod = Duration(minutes: 15);
+
   /// UI tekstas lietuviškai (pvz. „1 val.“).
   static String get confirmationTimeoutLabel {
     final hours = scoreConfirmationTimeout.inHours;
