@@ -140,6 +140,82 @@ class TournamentEngine {
     }
   }
 
+  static bool isRoundRobinFormat(String? format) {
+    final f = format ?? '';
+    return f.contains('Grupės') ||
+        f.contains('Round Robin') ||
+        f.contains('Swiss');
+  }
+
+  /// Papildomi round-robin mačai vėliau prisijungusiam dalyviui (vs visi grupės žaidėjai).
+  static Future<int> addParticipantToGroup({
+    required String tournamentId,
+    required String stageId,
+    required String userId,
+    required String groupName,
+  }) async {
+    final client = Supabase.instance.client;
+
+    final existingRes = await client
+        .from('matches')
+        .select()
+        .eq('tournament_id', tournamentId)
+        .eq('stage', stageId)
+        .eq('group_name', groupName);
+    final existing = List<Map<String, dynamic>>.from(existingRes);
+
+    final opponents = <String>{};
+    var maxMatchNum = 0;
+    for (final m in existing) {
+      final p1 = m['player1_id']?.toString();
+      final p2 = m['player2_id']?.toString();
+      if (p1 != null && p1.isNotEmpty) opponents.add(p1);
+      if (p2 != null && p2.isNotEmpty) opponents.add(p2);
+      final mn = int.tryParse(m['match_num']?.toString() ?? '0') ?? 0;
+      if (mn > maxMatchNum) maxMatchNum = mn;
+    }
+    opponents.remove(userId);
+
+    if (opponents.isEmpty) {
+      throw Exception(
+        'Grupėje nėra kitų žaidėjų — negalima sugeneruoti mačų.',
+      );
+    }
+
+    bool pairExists(String a, String b) {
+      for (final m in existing) {
+        final p1 = m['player1_id']?.toString();
+        final p2 = m['player2_id']?.toString();
+        if ((p1 == a && p2 == b) || (p1 == b && p2 == a)) return true;
+      }
+      return false;
+    }
+
+    final matchesToInsert = <Map<String, dynamic>>[];
+    var matchNum = maxMatchNum;
+    for (final opponent in opponents) {
+      if (pairExists(userId, opponent)) continue;
+      matchNum++;
+      matchesToInsert.add({
+        'tournament_id': tournamentId,
+        'stage': stageId,
+        'group_name': groupName,
+        'round': 1,
+        'match_num': matchNum,
+        'player1_id': userId,
+        'player2_id': opponent,
+        'status': 'pending',
+        'score_p1': 0,
+        'score_p2': 0,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+    }
+
+    if (matchesToInsert.isEmpty) return 0;
+    await client.from('matches').insert(matchesToInsert);
+    return matchesToInsert.length;
+  }
+
   static Future<void> _generateSingleElimination(
     SupabaseClient client,
     String tournamentId,

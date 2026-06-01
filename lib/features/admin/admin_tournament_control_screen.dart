@@ -38,6 +38,7 @@ class _AdminTournamentControlScreenState
   String _selectedTab = "BENDRA INFO";
 
   bool _isParticipantsExpanded = false;
+  final Map<String, String> _orphanGroupByUserId = {};
 
   String _venueType = "Aikštelė";
   List<String> _venueTypes = [];
@@ -1921,6 +1922,242 @@ class _AdminTournamentControlScreenState
     );
   }
 
+  Set<String> _routingTargetStageIds() {
+    final ids = <String>{};
+    for (final s in _stages) {
+      final adv = s['advance_to']?.toString();
+      final drop = s['drop_to']?.toString();
+      if (adv != null && adv.isNotEmpty && adv != 'none') ids.add(adv);
+      if (drop != null && drop.isNotEmpty && drop != 'none') ids.add(drop);
+    }
+    return ids;
+  }
+
+  Map<String, dynamic>? _firstRoundRobinStage() {
+    final targets = _routingTargetStageIds();
+    for (final s in _stages) {
+      final stageId = s['id']?.toString() ?? '';
+      if (targets.contains(stageId)) continue;
+      if (TournamentEngine.isRoundRobinFormat(s['format']?.toString())) {
+        return Map<String, dynamic>.from(s);
+      }
+    }
+    return null;
+  }
+
+  List<Map<String, dynamic>> _orphanParticipants() {
+    final inMatches = <String>{};
+    for (final m in _existingMatches) {
+      final p1 = m['player1_id']?.toString();
+      final p2 = m['player2_id']?.toString();
+      if (p1 != null && p1.isNotEmpty) inMatches.add(p1);
+      if (p2 != null && p2.isNotEmpty) inMatches.add(p2);
+    }
+
+    final rrStage = _firstRoundRobinStage();
+    final division = rrStage?['division']?.toString() ?? 'Visi';
+
+    return _participants
+        .where((p) {
+          final uid = p['user_id']?.toString();
+          if (uid == null || uid.isEmpty || inMatches.contains(uid)) {
+            return false;
+          }
+          if (division != 'Visi') {
+            final pDiv = p['division']?.toString();
+            if (pDiv != null && pDiv.isNotEmpty && pDiv != division) {
+              return false;
+            }
+          }
+          return true;
+        })
+        .map((p) => Map<String, dynamic>.from(p as Map<String, dynamic>))
+        .toList();
+  }
+
+  List<String> _distinctGroupNamesForStage(String stageId) {
+    final names = <String>{};
+    for (final m in _existingMatches) {
+      if (m['stage']?.toString() != stageId) continue;
+      final g = m['group_name']?.toString().trim();
+      if (g != null && g.isNotEmpty) names.add(g);
+    }
+    final list = names.toList()..sort();
+    return list;
+  }
+
+  Future<void> _addOrphanToGroup(
+    Map<String, dynamic> participant,
+    String groupName,
+  ) async {
+    final stage = _firstRoundRobinStage();
+    if (stage == null) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final count = await TournamentEngine.addParticipantToGroup(
+        tournamentId: widget.tournament['id'].toString(),
+        stageId: stage['id'].toString(),
+        userId: participant['user_id'].toString(),
+        groupName: groupName,
+      );
+      if (mounted) {
+        _showSuccess(
+          count > 0 ? 'Mačai sugeneruoti ($count)' : 'Naujų mačų nereikėjo',
+        );
+      }
+      await _loadData();
+    } catch (e) {
+      _showError('Nepavyko pridėti į grupę: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Widget _buildOrphanParticipantsCard() {
+    final rrStage = _firstRoundRobinStage();
+    if (rrStage == null || _existingMatches.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final orphans = _orphanParticipants();
+    if (orphans.isEmpty) return const SizedBox.shrink();
+
+    final stageId = rrStage['id'].toString();
+    final groups = _distinctGroupNamesForStage(stageId);
+    if (groups.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.55)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                LucideIcons.alertTriangle,
+                size: 18,
+                color: Colors.amber.shade700,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Dalyviai be sugeneruotų mačų: ${orphans.length}',
+                  style: GoogleFonts.inter(
+                    color: Colors.amber.shade900,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Etapas: ${rrStage['name'] ?? 'Grupės'} — pridėkite į esamą grupę (round-robin).',
+            style: TextStyle(
+              color: Colors.amber.shade900.withValues(alpha: 0.85),
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...orphans.map((p) {
+            final uid = p['user_id'].toString();
+            final name = p['team_name']?.toString() ?? 'Dalyvis';
+            final selected =
+                _orphanGroupByUserId[uid] ?? groups.first;
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      name,
+                      style: const TextStyle(
+                        color: QortColors.textPrimary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 2,
+                    child: DropdownButtonFormField<String>(
+                      value: groups.contains(selected) ? selected : groups.first,
+                      dropdownColor: const Color(0xFF1E293B),
+                      style: const TextStyle(
+                        color: QortColors.textPrimary,
+                        fontSize: 13,
+                      ),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFF202025),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                      items: [
+                        ...groups.map(
+                          (g) => DropdownMenuItem(value: g, child: Text(g)),
+                        ),
+                        // TODO: „Sukurti naują grupę“ — atskiras flow.
+                      ],
+                      onChanged: _isLoading
+                          ? null
+                          : (v) {
+                              if (v == null) return;
+                              setState(() => _orphanGroupByUserId[uid] = v);
+                            },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: _isLoading
+                        ? null
+                        : () => _addOrphanToGroup(
+                              p,
+                              _orphanGroupByUserId[uid] ?? groups.first,
+                            ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.amber.shade800,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                    ),
+                    child: const Text(
+                      'PRIDĖTI',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBendraInfo() {
     final p = context.qortPalette;
     return Column(
@@ -1964,6 +2201,8 @@ class _AdminTournamentControlScreenState
         const SizedBox(height: 30),
 
         _buildDeferredRoutingBanner(),
+
+        _buildOrphanParticipantsCard(),
 
         if (_disputedMatches.isNotEmpty) ...[
           _buildDisputesSection(),
