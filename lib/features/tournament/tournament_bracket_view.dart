@@ -795,6 +795,12 @@ class _TournamentBracketViewState extends State<TournamentBracketView> {
       );
     }
 
+    const columnWidth = 280.0;
+    const columnGap = 60.0;
+    const cardVerticalPadding = 20.0;
+    // _WowBracketCard: round label (~23) + 2×player row (~56) + divider (1) ≈ 136
+    const estimatedCardHeight = 136.0;
+
     return InteractiveViewer(
       boundaryMargin: const EdgeInsets.all(150),
       minScale: 0.2,
@@ -802,29 +808,46 @@ class _TournamentBracketViewState extends State<TournamentBracketView> {
       constrained: false,
       child: Padding(
         padding: const EdgeInsets.all(40),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
           children: [
-            ...sortedRoundKeys.map((r) {
-              return Container(
-                width: 280,
-                margin: const EdgeInsets.only(right: 60),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: rounds[r]!.map((match) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 20),
-                      child: _WowBracketCard(
-                        match: match,
-                        participants: widget.participants,
-                        roundName: _getRoundName(r, rounds[r]!.length),
-                      ),
-                    );
-                  }).toList(),
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _BracketConnectorPainter(
+                  rounds: rounds,
+                  sortedRoundKeys: sortedRoundKeys,
+                  columnWidth: columnWidth,
+                  columnGap: columnGap,
+                  cardVerticalPadding: cardVerticalPadding,
+                  estimatedCardHeight: estimatedCardHeight,
+                  lineColor: Colors.white.withValues(alpha: 0.2),
                 ),
-              );
-            }),
-            if (placementMatches.isNotEmpty)
+              ),
+            ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ...sortedRoundKeys.map((r) {
+                  return Container(
+                    width: columnWidth,
+                    margin: const EdgeInsets.only(right: columnGap),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: rounds[r]!.map((match) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: cardVerticalPadding,
+                          ),
+                          child: _WowBracketCard(
+                            match: match,
+                            participants: widget.participants,
+                            roundName: _getRoundName(r, rounds[r]!.length),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  );
+                }),
+                if (placementMatches.isNotEmpty)
               Container(
                 width: 280,
                 margin: const EdgeInsets.only(left: 40),
@@ -875,6 +898,8 @@ class _TournamentBracketViewState extends State<TournamentBracketView> {
                   ],
                 ),
               ),
+              ],
+            ),
           ],
         ),
       ),
@@ -930,6 +955,85 @@ class _TournamentBracketViewState extends State<TournamentBracketView> {
       },
     );
   }
+}
+
+class _BracketConnectorPainter extends CustomPainter {
+  final Map<int, List<Map<String, dynamic>>> rounds;
+  final List<int> sortedRoundKeys;
+  final double columnWidth;
+  final double columnGap;
+  final double cardVerticalPadding;
+  final double estimatedCardHeight;
+  final Color lineColor;
+
+  const _BracketConnectorPainter({
+    required this.rounds,
+    required this.sortedRoundKeys,
+    required this.columnWidth,
+    required this.columnGap,
+    required this.cardVerticalPadding,
+    required this.estimatedCardHeight,
+    required this.lineColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = lineColor
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    for (int rIdx = 0; rIdx < sortedRoundKeys.length - 1; rIdx++) {
+      final r = sortedRoundKeys[rIdx];
+      final nextR = sortedRoundKeys[rIdx + 1];
+      if (r >= 50) continue;
+
+      final matches = rounds[r]!;
+      final nextMatches = rounds[nextR]!;
+
+      for (int i = 0; i < matches.length; i++) {
+        final match = matches[i];
+        final p1 = match['player1_id'];
+        final p2 = match['player2_id'];
+        if (p1 == null && p2 == null) continue;
+
+        final m = int.tryParse(match['match_num'].toString()) ?? (i + 1);
+        final nextM = (m + 1) ~/ 2;
+
+        final childIdx = nextMatches.indexWhere((nm) {
+          final nmNum = int.tryParse(nm['match_num'].toString()) ?? -1;
+          return nmNum == nextM;
+        });
+        if (childIdx == -1) continue;
+
+        final parentX = rIdx * (columnWidth + columnGap) + columnWidth;
+        final parentY = _matchCenterY(matches.length, i);
+
+        final childX = (rIdx + 1) * (columnWidth + columnGap);
+        final childY = _matchCenterY(nextMatches.length, childIdx);
+
+        final midX = parentX + (columnGap / 2);
+        canvas.drawLine(Offset(parentX, parentY), Offset(midX, parentY), paint);
+        canvas.drawLine(Offset(midX, parentY), Offset(midX, childY), paint);
+        canvas.drawLine(Offset(midX, childY), Offset(childX, childY), paint);
+      }
+    }
+  }
+
+  double _matchCenterY(int totalMatches, int index) {
+    if (totalMatches <= 0) return 0;
+    final segmentHeight =
+        estimatedCardHeight + cardVerticalPadding * 2;
+    return cardVerticalPadding +
+        estimatedCardHeight / 2 +
+        index * segmentHeight;
+  }
+
+  @override
+  bool shouldRepaint(_BracketConnectorPainter old) =>
+      old.rounds != rounds ||
+      old.sortedRoundKeys != sortedRoundKeys ||
+      old.lineColor != lineColor;
 }
 
 class _WowBracketCard extends StatelessWidget {

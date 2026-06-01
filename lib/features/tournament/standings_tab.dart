@@ -25,9 +25,26 @@ class _StandingsTabState extends State<StandingsTab> {
   Map<String, List<Map<String, dynamic>>> _groups = {};
   bool _allowTies = false;
   bool _isAdmin = false;
+  int _advancingCount = 0;
 
   List<Map<String, dynamic>> _groupStages = [];
   String _selectedStageId = '';
+
+  int _advancingCountForStage(Map<String, dynamic>? stage) {
+    if (stage == null) return 0;
+    final raw = stage['advancing_players'];
+    if (raw == null) return 2;
+    return int.tryParse(raw.toString()) ?? 2;
+  }
+
+  Map<String, dynamic>? _currentStageConfig() {
+    for (final s in widget.stages) {
+      if (s is Map && s['id']?.toString() == _selectedStageId) {
+        return Map<String, dynamic>.from(s);
+      }
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -94,6 +111,12 @@ class _StandingsTabState extends State<StandingsTab> {
             0;
         allowTies = currentStageData['allow_ties'] == true;
       }
+
+      final advancingCount = _advancingCountForStage(
+        currentStageData != null
+            ? Map<String, dynamic>.from(currentStageData)
+            : _currentStageConfig(),
+      );
 
       final matches = await client
           .from('matches')
@@ -254,6 +277,7 @@ class _StandingsTabState extends State<StandingsTab> {
           _groups = tempGroups;
           _allowTies = allowTies;
           _isAdmin = isAdmin;
+          _advancingCount = advancingCount;
           _isLoading = false;
         });
       }
@@ -546,6 +570,38 @@ class _StandingsTabState extends State<StandingsTab> {
                           ],
                         ),
                       ),
+                      if (_advancingCount > 0)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(color: palette.border),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.arrow_upward,
+                                size: 14,
+                                color: Colors.green.shade400,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                _advancingCount >= players.length
+                                    ? 'Visi dalyviai pereina'
+                                    : 'Į kitą etapą: top $_advancingCount iš grupės',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: palette.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       Padding(
                         padding: const EdgeInsets.all(12),
                         child: Table(
@@ -575,10 +631,27 @@ class _StandingsTabState extends State<StandingsTab> {
                             ...players.asMap().entries.map((entry) {
                               int rank = entry.key + 1;
                               var player = entry.value;
+                              final showQualification = _advancingCount > 0;
+                              final isQualifying =
+                                  showQualification && rank <= _advancingCount;
+                              final isCutoff =
+                                  showQualification && rank == _advancingCount;
                               return TableRow(
                                 decoration: BoxDecoration(
-                                  color: rank.isOdd
-                                      ? palette.listRowAlt.withValues(alpha: 0.5)
+                                  color: isQualifying
+                                      ? Colors.green.withValues(alpha: 0.08)
+                                      : (rank.isOdd
+                                          ? palette.listRowAlt
+                                              .withValues(alpha: 0.5)
+                                          : null),
+                                  border: isCutoff
+                                      ? Border(
+                                          bottom: BorderSide(
+                                            color: Colors.orange
+                                                .withValues(alpha: 0.6),
+                                            width: 2,
+                                          ),
+                                        )
                                       : null,
                                 ),
                                 children: [
@@ -588,6 +661,16 @@ class _StandingsTabState extends State<StandingsTab> {
                                     ),
                                     child: Row(
                                       children: [
+                                        SizedBox(
+                                          width: 18,
+                                          child: isQualifying
+                                              ? Icon(
+                                                  Icons.check_circle,
+                                                  size: 14,
+                                                  color: Colors.green.shade400,
+                                                )
+                                              : null,
+                                        ),
                                         Text(
                                           "$rank. ",
                                           style: TextStyle(
