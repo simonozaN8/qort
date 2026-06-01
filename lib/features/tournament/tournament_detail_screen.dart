@@ -14,6 +14,8 @@ import 'schedule_tab.dart';
 import 'ladder_tab.dart';
 import 'tournament_engine.dart';
 import '../../core/services/match_auto_activate_service.dart';
+import '../../core/services/match_dispute_service.dart';
+import '../../core/widgets/match_dispute_dialog.dart';
 import '../../core/constants/query_limits.dart';
 import '../../core/constants/match_constants.dart';
 import '../../core/models/sport_catalog_entry.dart';
@@ -1109,14 +1111,36 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
                       _showScoreDialog(m, isAdminOverride: _isAdmin),
                   onConfirmScore: (m) => _finalizeMatch(m, "Confirmed"),
                   onDisputeScore: (m) async {
-                    await Supabase.instance.client
-                        .from('matches')
-                        .update({'status': 'disputed'})
-                        .eq('id', m['id']);
-                    _showError(
-                      "Mačas pažymėtas kaip ginčijamas. Administratorius jį išspręs valdymo pulte.",
+                    final myId = _currentUserId;
+                    if (myId == null) return;
+
+                    final oppId = m['player1_id'] == myId
+                        ? m['player2_id']
+                        : m['player1_id'];
+                    final reason = await showMatchDisputeDialog(
+                      context,
+                      opponentName: _findName(oppId),
                     );
-                    _loadAllData();
+                    if (reason == null || !mounted) return;
+
+                    try {
+                      await MatchDisputeService.submitDispute(
+                        matchId: m['id'].toString(),
+                        reason: reason,
+                        submittedByUserId: myId,
+                      );
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Skundas išsiųstas organizatoriui'),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                      }
+                      _loadAllData();
+                    } catch (e) {
+                      _showError('Nepavyko pateikti skundo: $e');
+                    }
                   },
                   onMatchesActivated: _loadAllData,
                 ),

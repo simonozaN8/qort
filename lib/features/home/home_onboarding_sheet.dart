@@ -64,7 +64,8 @@ class _OnboardingDialogState extends State<_OnboardingDialog> {
       icon: LucideIcons.calendarDays,
       accent: Color(0xFF2563EB),
       title: 'Rungtynės ir kalendorius',
-      body: 'Antras tab apačioje — turnyrų sąrašas su filtrais ir registracija.',
+      body: 'Antras tab apačioje — turnyrai, treniruotės ar Blitz pagal '
+          'pasirinktą režimą.',
     ),
     _OnboardingStep(
       icon: LucideIcons.users,

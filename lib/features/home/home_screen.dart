@@ -5,6 +5,9 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants/query_limits.dart';
 import '../../core/constants/match_constants.dart';
+import '../../core/services/match_dispute_service.dart';
+import '../../core/utils/datetime_utils.dart';
+import '../../core/widgets/match_dispute_dialog.dart';
 import '../../core/theme/qort_colors.dart';
 import '../../core/theme/qort_palette.dart';
 import '../../core/theme/qort_palette_extension.dart';
@@ -157,9 +160,7 @@ class _HomeScreenState extends State<HomeScreen> {
               'entered_by': _currentUserId,
               'score_str': scoreString,
               'is_no_score': isNoScore,
-              'score_entered_at': DateTime.now()
-                  .toUtc()
-                  .toIso8601String(), // SAUGOJAM TIKSLŲ LAIKĄ
+              'score_entered_at': DateTimeUtils.toIsoUtc(DateTime.now()),
             },
           })
           .eq('id', match['id']);
@@ -189,18 +190,34 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _disputeScore(Map<String, dynamic> match) async {
+    final reason = await showMatchDisputeDialog(
+      context,
+      opponentName: match['opponent_name']?.toString(),
+    );
+    if (reason == null || !mounted) return;
+
     setState(() => _isLoading = true);
     try {
-      await Supabase.instance.client
-          .from('matches')
-          .update({'status': 'disputed'})
-          .eq('id', match['id']);
-      _showError(
-        "Mačas pažymėtas kaip ginčijamas. Administratorius jį išspręs.",
+      final uid = Supabase.instance.client.auth.currentUser?.id;
+      if (uid == null) throw Exception('Neprisijungęs vartotojas');
+
+      await MatchDisputeService.submitDispute(
+        matchId: match['id'].toString(),
+        reason: reason,
+        submittedByUserId: uid,
       );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Skundas išsiųstas organizatoriui'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
       _loadDashboardData();
     } catch (e) {
-      _showError("Klaida: $e");
+      _showError("Nepavyko pateikti skundo: $e");
     }
   }
 
@@ -674,7 +691,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (m['card_type'] == 'time_proposal') {
                     String pDate = DateFormat(
                       'MM-dd HH:mm',
-                    ).format(DateTime.parse(m['proposed_date']).toLocal());
+                    ).format(DateTimeUtils.fromIso(m['proposed_date'].toString()));
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: _incomingActionCard(
@@ -718,7 +735,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   DateTime? actualDate;
                   String? rawTime = m['scheduled_time'] ?? m['match_date'];
                   if (rawTime != null) {
-                    actualDate = DateTime.parse(rawTime).toLocal();
+                    actualDate = DateTimeUtils.fromIso(rawTime);
                     timeStr = DateFormat('MM-dd HH:mm').format(actualDate);
                   }
 
@@ -982,7 +999,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                               LucideIcons.shieldAlert,
                                               size: 16,
                                             ),
-                                            label: const Text("GINČYTI"),
+                                            label: const Text("Apskųsti"),
                                             style: OutlinedButton.styleFrom(
                                               foregroundColor: Colors.red,
                                               side: const BorderSide(color: Colors.red),
@@ -1395,7 +1412,7 @@ class _HomeScreenState extends State<HomeScreen> {
             String pDate = m['proposed_date'] != null
                 ? DateFormat(
                     'MM-dd HH:mm',
-                  ).format(DateTime.parse(m['proposed_date']).toLocal())
+                  ).format(DateTimeUtils.fromIso(m['proposed_date'].toString()))
                 : "Nenurodyta";
             return Padding(
               padding: const EdgeInsets.only(bottom: 15),
@@ -1425,7 +1442,7 @@ class _HomeScreenState extends State<HomeScreen> {
             DateTime? actualDate;
             String? rawTime = m['scheduled_time'] ?? m['match_date'];
             if (rawTime != null) {
-              actualDate = DateTime.parse(rawTime).toLocal();
+              actualDate = DateTimeUtils.fromIso(rawTime);
               timeStr = DateFormat('MM-dd HH:mm').format(actualDate);
             }
             String locStr =

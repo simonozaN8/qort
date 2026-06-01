@@ -247,7 +247,7 @@ class QortHelpBanner extends StatelessWidget {
               Expanded(
                 child: Text(
                   title ?? 'Kaip užpildyti',
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: QortColors.textPrimary,
                     fontWeight: FontWeight.bold,
                     fontSize: 13,

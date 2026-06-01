@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import '../../core/constants/query_limits.dart';
 import '../../core/models/sport_catalog_entry.dart';
 import '../../core/services/sports_catalog_service.dart';
+import '../../core/utils/datetime_utils.dart';
 import '../../core/theme/qort_design_system.dart';
 import '../../core/theme/qort_colors.dart';
 import '../../core/theme/qort_palette_extension.dart';
@@ -720,7 +721,7 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
                             'level': myLevelForSport, // Siunčiame tavo lygį
                             'min_level': opponentLevelRange.start.toInt(),
                             'max_level': opponentLevelRange.end.toInt(),
-                            'match_date': dt.toUtc().toIso8601String(),
+                            'match_date': DateTimeUtils.toIsoUtc(dt),
                             'location': locationCtrl.text.trim(),
                             'has_court': hasCourt,
                             'court_price': hasCourt
@@ -808,7 +809,7 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
   @override
   Widget build(BuildContext context) {
     final p = context.qortPalette;
-    final accent = QortDesignSystem.training;
+    const accent = QortDesignSystem.training;
 
     return Scaffold(
       backgroundColor: p.background,
@@ -893,9 +894,9 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
                       itemBuilder: (context, index) {
                         final notice = _notices[index];
                         final creator = notice['profiles'];
-                        final date = DateTime.parse(
-                          notice['match_date'],
-                        ).toLocal();
+                        final date = DateTimeUtils.fromIso(
+                          notice['match_date'].toString(),
+                        );
                         final bool hasCourt = notice['has_court'] ?? false;
                         final bool isTeam = notice['is_team'] ?? false;
 

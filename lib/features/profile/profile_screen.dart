@@ -7,7 +7,6 @@ import 'package:intl/intl.dart';
 import 'dart:math';
 
 import '../../core/constants/app_shell_layout.dart';
-import '../../core/theme/qort_design_system.dart';
 import '../../core/theme/qort_colors.dart';
 import '../../core/theme/qort_palette_extension.dart';
 import '../../core/widgets/qort_ambient_background.dart';

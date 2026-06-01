@@ -11,6 +11,7 @@ import '../../core/theme/qort_theme.dart';
 import '../../core/utils/sport_icons.dart';
 import '../../core/widgets/qort_live_scaffold.dart';
 import '../../core/widgets/qort_section_header.dart';
+import '../admin/admin_tournament_control_screen.dart';
 import '../profile/user_model.dart';
 import '../teams/team_model.dart';
 
@@ -32,6 +33,7 @@ class NotificationsScreen extends StatefulWidget {
 class _NotificationsScreenState extends State<NotificationsScreen> {
   bool _isLoading = true;
   List<TeamInvitation> _teamInvitations = [];
+  List<Map<String, dynamic>> _userNotifications = [];
   bool _hasChanges = false;
 
   @override
@@ -66,9 +68,25 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           .map((json) => TeamInvitation.fromJson(json))
           .toList();
 
+      List<Map<String, dynamic>> userNotifs = [];
+      try {
+        final notifRows = await supabase
+            .from('user_notifications')
+            .select()
+            .eq('user_id', myId)
+            .isFilter('read_at', null)
+            .order('created_at', ascending: false);
+        userNotifs = (notifRows as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      } catch (e) {
+        debugPrint('user_notifications nepasiekiamos: $e');
+      }
+
       if (mounted) {
         setState(() {
           _teamInvitations = teamInv;
+          _userNotifications = userNotifs;
           _isLoading = false;
         });
       }
@@ -130,7 +148,56 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   /// Bendras pranešimų skaičius
-  int get _totalCount => _teamInvitations.length;
+  int get _totalCount => _teamInvitations.length + _userNotifications.length;
+
+  Future<void> _openDisputeNotification(Map<String, dynamic> notif) async {
+    try {
+      final supabase = Supabase.instance.client;
+      final payload = notif['payload'];
+      final payloadMap = payload is Map
+          ? Map<String, dynamic>.from(payload)
+          : <String, dynamic>{};
+      final tournamentId = payloadMap['tournament_id']?.toString();
+      if (tournamentId == null || tournamentId.isEmpty) {
+        throw Exception('Trūksta turnyro ID');
+      }
+
+      await supabase
+          .from('user_notifications')
+          .update({'read_at': DateTime.now().toUtc().toIso8601String()})
+          .eq('id', notif['id']);
+
+      final tRow = await supabase
+          .from('tournaments')
+          .select()
+          .eq('id', tournamentId)
+          .maybeSingle();
+      if (tRow == null) throw Exception('Turnyras nerastas');
+
+      _hasChanges = true;
+      if (!mounted) return;
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AdminTournamentControlScreen(
+            tournament: Map<String, dynamic>.from(tRow as Map),
+          ),
+        ),
+      );
+      _loadAll();
+    } catch (e) {
+      debugPrint('Klaida atidarant ginčą: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Nepavyko atidaryti: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -167,12 +234,23 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       mode: widget.currentMode,
       title: 'Pranešimai',
       heroHeadline: '$_totalCount nauji',
-      subtitle: 'Komandų pakvietimai ir kiti pranešimai',
-      onRefresh: _loadAll,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (_teamInvitations.isNotEmpty) ...[
+        subtitle: 'Komandų pakvietimai ir kiti pranešimai',
+        onRefresh: _loadAll,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_userNotifications.isNotEmpty) ...[
+              QortSectionHeader(
+                title: 'Turnyrų pranešimai',
+                count: _userNotifications.length,
+                accent: accent,
+                icon: LucideIcons.shieldAlert,
+              ),
+              const SizedBox(height: 12),
+              ..._userNotifications.map(_buildUserNotificationCard),
+              if (_teamInvitations.isNotEmpty) const SizedBox(height: 24),
+            ],
+            if (_teamInvitations.isNotEmpty) ...[
             QortSectionHeader(
               title: 'Komandų pakvietimai',
               count: _teamInvitations.length,
@@ -210,6 +288,108 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             style: TextStyle(color: p.textSecondary, height: 1.5),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildUserNotificationCard(Map<String, dynamic> notif) {
+    final createdRaw = notif['created_at']?.toString();
+    DateTime? createdAt;
+    if (createdRaw != null) {
+      createdAt = DateTime.tryParse(createdRaw);
+    }
+    final isDispute = notif['type']?.toString() == 'match_dispute';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: isDispute ? () => _openDisputeNotification(notif) : null,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: QortTheme.card(
+              context.qortPalette,
+              borderColor: isDispute
+                  ? Colors.red.withOpacity(0.35)
+                  : null,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        isDispute
+                            ? LucideIcons.shieldAlert
+                            : LucideIcons.bell,
+                        color: Colors.red,
+                        size: 18,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            notif['title']?.toString() ?? 'Pranešimas',
+                            style: const TextStyle(
+                              color: QortColors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (createdAt != null)
+                            Text(
+                              DateFormat('yyyy-MM-dd HH:mm').format(
+                                createdAt.toLocal(),
+                              ),
+                              style: const TextStyle(
+                                color: QortColors.textSecondary,
+                                fontSize: 11,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (isDispute)
+                      const Icon(
+                        LucideIcons.chevronRight,
+                        color: QortColors.textSecondary,
+                        size: 18,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  notif['body']?.toString() ?? '',
+                  style: const TextStyle(
+                    color: QortColors.textSecondary,
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
+                ),
+                if (isDispute) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Paliesk — atidarys turnyro valdymą (ginčų sekcija)',
+                    style: TextStyle(
+                      color: Colors.red.withOpacity(0.85),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

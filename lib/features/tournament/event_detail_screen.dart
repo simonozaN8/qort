@@ -35,7 +35,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
           .from('tournaments')
           .select()
           .eq('event_id', widget.event['id'])
-          .order('created_at', ascending: true);
+          .order('created_at', ascending: false);
 
       if (mounted) {
         setState(() {

@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme/qort_colors.dart';
 import '../../core/constants/match_constants.dart';
 import '../../core/services/match_auto_activate_service.dart';
+import '../../core/utils/datetime_utils.dart';
 import '../../core/widgets/qort_form_help.dart';
 
 class ScheduleTab extends StatefulWidget {
@@ -114,7 +115,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
 
   void _showScheduleDialog(Map<String, dynamic> match) {
     DateTime? selectedDate = match['scheduled_time'] != null
-        ? DateTime.parse(match['scheduled_time']).toLocal()
+        ? DateTimeUtils.fromIso(match['scheduled_time'].toString())
         : null;
     TimeOfDay? selectedTime = selectedDate != null
         ? TimeOfDay.fromDateTime(selectedDate)
@@ -247,7 +248,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
                       selectedTime!.hour,
                       selectedTime!.minute,
                     );
-                    isoTime = dt.toUtc().toIso8601String();
+                    isoTime = DateTimeUtils.toIsoUtc(dt);
                   }
 
                   setState(() => _isUpdating = true);
@@ -585,7 +586,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
                             Text(
                               DateFormat(
                                 'MM-dd HH:mm',
-                              ).format(DateTime.parse(scheduledTime).toLocal()),
+                              ).format(DateTimeUtils.fromIso(scheduledTime.toString())),
                               style: const TextStyle(
                                 color: Colors.blue,
                                 fontSize: 12,
@@ -983,7 +984,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
                   side: const BorderSide(color: Colors.red),
                 ),
                 onPressed: () => widget.onDisputeScore(match),
-                child: const Text("GINČYTI"),
+                child: const Text("Apskųsti"),
               ),
             ),
             const SizedBox(width: 10),

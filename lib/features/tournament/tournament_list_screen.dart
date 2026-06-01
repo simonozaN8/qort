@@ -32,6 +32,7 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
   List<String> _filters = ["VISI"];
   List<dynamic> _events = [];
   bool _isLoading = true;
+  OpenEventsSortMode _sortMode = OpenEventsSortMode.newest;
 
   @override
   void initState() {
@@ -56,6 +57,7 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
     try {
       final combinedList = await OpenEventsService.loadOpenEvents(
         limit: QueryLimits.tournamentList,
+        sortMode: _sortMode,
       );
 
       if (mounted) {
@@ -68,6 +70,12 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
       debugPrint("Klaida kraunant kalendorių: $e");
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _onSortModeChanged(OpenEventsSortMode mode) {
+    if (_sortMode == mode) return;
+    setState(() => _sortMode = mode);
+    _loadEvents();
   }
 
   @override
@@ -100,11 +108,46 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
                       padding: const EdgeInsets.fromLTRB(16, 8, 12, 0),
                       child: QortCompactHero(
                         mode: AppMode.competition,
-                        title: 'Rungtynės · Kalendorius',
+                        title: 'Turnyrai · Kalendorius',
                         subtitle: '${displayedEvents.length} renginiai',
                       ),
                     ),
                     const SizedBox(height: 8),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 12, 0),
+                      child: Text(
+                        'RIKIAVIMAS',
+                        style: QortTheme.sectionTitle(p),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      height: 40,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        children: [
+                          QortPill(
+                            label: 'Naujausi',
+                            icon: LucideIcons.sparkles,
+                            selected: _sortMode == OpenEventsSortMode.newest,
+                            color: QortDesignSystem.competition,
+                            onTap: () =>
+                                _onSortModeChanged(OpenEventsSortMode.newest),
+                          ),
+                          const SizedBox(width: 8),
+                          QortPill(
+                            label: 'Artimiausi',
+                            icon: LucideIcons.calendarClock,
+                            selected: _sortMode == OpenEventsSortMode.soonest,
+                            color: QortDesignSystem.competition,
+                            onTap: () =>
+                                _onSortModeChanged(OpenEventsSortMode.soonest),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 12, 0),
                       child: Row(
@@ -336,7 +379,7 @@ class _EventCoverImage extends StatelessWidget {
       alignment: Alignment.center,
       child: showLoader
           ? const CircularProgressIndicator(strokeWidth: 2)
-          : Icon(
+          : const Icon(
               LucideIcons.image,
               color: QortDesignSystem.textMuted,
               size: 40,

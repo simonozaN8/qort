@@ -6,7 +6,7 @@ import '../../core/constants/app_shell_layout.dart';
 import '../../core/theme/qort_design_system.dart';
 import '../../features/profile/user_model.dart';
 
-/// Apatinė navigacija: Pagrindinis · Rungtynės · [Q] · Sukurti · Profilis.
+/// Apatinė navigacija: Pagrindinis · [režimas] · [Q] · Sukurti · Profilis.
 class QortBottomNav extends StatelessWidget {
   final int currentIndex;
   final AppMode currentMode;
@@ -26,13 +26,24 @@ class QortBottomNav extends StatelessWidget {
 
   static const _leftItems = [
     _NavItem(index: 0, icon: LucideIcons.home, label: 'Pagrindinis'),
-    _NavItem(index: 1, icon: LucideIcons.trophy, label: 'Rungtynės'),
+    _NavItem(index: 1, icon: LucideIcons.trophy, label: ''),
   ];
 
   static const _rightItems = [
     _NavItem(index: _createIndex, icon: LucideIcons.plus, label: 'Sukurti'),
     _NavItem(index: 4, icon: LucideIcons.user, label: 'Profilis'),
   ];
+
+  static String _playTabLabel(AppMode mode) {
+    switch (mode) {
+      case AppMode.competition:
+        return 'Turnyrai';
+      case AppMode.training:
+        return 'Treniruotės';
+      case AppMode.blitz:
+        return 'Žaidimai';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -80,7 +91,15 @@ class QortBottomNav extends StatelessWidget {
                             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                             children: [
                               _tab(context, _leftItems[0], accent),
-                              _tab(context, _leftItems[1], accent),
+                              _tab(
+                                context,
+                                _NavItem(
+                                  index: 1,
+                                  icon: LucideIcons.trophy,
+                                  label: _playTabLabel(currentMode),
+                                ),
+                                accent,
+                              ),
                             ],
                           ),
                         ),

@@ -1,6 +1,8 @@
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../utils/datetime_utils.dart';
+
 /// Laiko/vietos pasiūlymai mačams — viena vieta vietoj tiesioginių Supabase kvietimų ekranuose.
 class MatchProposalService {
   MatchProposalService._();
@@ -14,7 +16,7 @@ class MatchProposalService {
     required String location,
   }) async {
     await _client.from('matches').update({
-      'proposed_date': dateTime.toIso8601String(),
+      'proposed_date': DateTimeUtils.toIsoUtc(dateTime),
       'proposed_location': location,
       'proposer_id': proposerId,
       'is_proposal_active': true,
@@ -54,7 +56,7 @@ class MatchProposalService {
     required String? proposedLocation,
   }) async {
     await _client.from('matches').update({
-      'match_date': proposedDate.toIso8601String(),
+      'match_date': DateTimeUtils.toIsoUtc(proposedDate),
       'location': proposedLocation,
       'is_proposal_active': false,
       'proposed_date': null,

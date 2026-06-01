@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/services/push_notification_service.dart';
 import '../../features/notifications/notifications_screen.dart';
 import 'qort_colors.dart';
 
@@ -52,8 +53,10 @@ class _NotificationBellState extends State<NotificationBell> {
           .eq('invited_user_id', myId)
           .eq('status', 'pending');
 
-      final total = (invitations as List).length;
-      // Ateityje pridėsim daugiau šaltinių (mini protokolas, sistemos pranešimai)
+      // 2. In-app pranešimai (ginčai ir kt.)
+      final inAppCount = await PushNotificationService.unreadCount(myId);
+
+      final total = (invitations as List).length + inAppCount;
 
       if (mounted) {
         setState(() {

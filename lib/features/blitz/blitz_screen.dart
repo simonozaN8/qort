@@ -137,7 +137,7 @@ class _BlitzScreenState extends State<BlitzScreen> {
             ),
           ],
           const SizedBox(height: 20),
-          QortSectionHeader(
+          const QortSectionHeader(
             title: 'Aktyvūs objektai',
             accent: accent,
             icon: LucideIcons.mapPin,

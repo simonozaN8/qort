@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/constants/query_limits.dart';
+import '../../core/utils/datetime_utils.dart';
 import '../../core/services/user_sports_service.dart';
 
 class TournamentEngine {
@@ -777,7 +778,10 @@ class TournamentEngine {
     final updatePayload = <String, dynamic>{
       'status': 'completed',
       'winner_id': winnerId,
-      'completed_at': DateTime.now().toUtc().toIso8601String(),
+      'completed_at': DateTimeUtils.toIsoUtc(DateTime.now()),
+      'dispute_reason': null,
+      'dispute_created_at': null,
+      'dispute_by_user_id': null,
     };
     if (scoreP1 != null) updatePayload['score_p1'] = s1;
     if (scoreP2 != null) updatePayload['score_p2'] = s2;

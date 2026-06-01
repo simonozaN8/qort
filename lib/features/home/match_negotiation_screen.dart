@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import '../../core/constants/query_limits.dart';
 import '../../core/services/match_proposal_service.dart';
+import '../../core/utils/datetime_utils.dart';
 
 class MatchNegotiationScreen extends StatefulWidget {
   final Map<String, dynamic> match;
@@ -72,7 +73,7 @@ class _MatchNegotiationScreenState extends State<MatchNegotiationScreen> {
         _hasActiveProposal = matchData['is_proposal_active'] ?? false;
         _proposerId = matchData['proposer_id'];
         if (matchData['proposed_date'] != null) {
-          _proposedDate = DateTime.parse(matchData['proposed_date']).toLocal();
+          _proposedDate = DateTimeUtils.fromIso(matchData['proposed_date'].toString());
         }
         _proposedLocation = matchData['proposed_location'];
 

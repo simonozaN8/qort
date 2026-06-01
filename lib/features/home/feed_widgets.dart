@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../core/constants/app_shell_layout.dart';
+import '../../core/utils/datetime_utils.dart';
 import '../../core/utils/sport_icons.dart';
 import '../../core/services/feed_service.dart';
 import '../../core/theme/qort_design_system.dart';
@@ -60,7 +61,7 @@ class FeedEmptyCommunity extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return QortEmptyState(
+    return const QortEmptyState(
       icon: LucideIcons.rss,
       title: 'Feed dar tuščias',
       message:
@@ -85,7 +86,7 @@ class FeedFriendActivitySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        QortSectionHeader(
+        const QortSectionHeader(
           title: 'Draugų aktyvumas',
           icon: LucideIcons.users,
           accent: QortDesignSystem.brand,
@@ -187,7 +188,7 @@ class FeedOpenMatchesSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        QortSectionHeader(
+        const QortSectionHeader(
           title: 'Atviri mačai netoli',
           icon: LucideIcons.mapPin,
           accent: QortModeColors.training,
@@ -205,9 +206,9 @@ class FeedOpenMatchesSection extends StatelessWidget {
             final photo = creator?['photo_url']?.toString() ?? '';
             final sport = notice['sport']?.toString() ?? '';
             final location = notice['location']?.toString() ?? '';
-            final date = DateTime.tryParse(notice['match_date']?.toString() ?? '');
-            final dateStr = date != null
-                ? DateFormat('MM-dd, HH:mm').format(date.toLocal())
+            final rawDate = notice['match_date']?.toString() ?? '';
+            final dateStr = rawDate.isNotEmpty
+                ? DateFormat('MM-dd, HH:mm').format(DateTimeUtils.fromIso(rawDate))
                 : '';
             final id = notice['id']?.toString() ?? '';
             final isJoining = joiningId == id;
@@ -308,7 +309,7 @@ Widget _subtleEmpty(String message) {
     backgroundColor: QortDesignSystem.bgElevated,
     child: Row(
       children: [
-        Icon(LucideIcons.info, size: 16, color: QortDesignSystem.textMuted),
+        const Icon(LucideIcons.info, size: 16, color: QortDesignSystem.textMuted),
         const SizedBox(width: QortDesignSystem.space3),
         Expanded(
           child: Text(message, style: QortDesignSystem.caption),
@@ -323,7 +324,7 @@ Widget _sectionError(String message) {
     backgroundColor: QortDesignSystem.bgElevated,
     child: Row(
       children: [
-        Icon(LucideIcons.alertTriangle,
+        const Icon(LucideIcons.alertTriangle,
             size: 16, color: QortDesignSystem.error),
         const SizedBox(width: QortDesignSystem.space3),
         Expanded(

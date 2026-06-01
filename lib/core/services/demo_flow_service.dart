@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../utils/datetime_utils.dart';
 import 'user_sports_service.dart';
 
 /// Demo srautai: treniruočių skelbimas → priėmimas → mačas; Blitz taškai.
@@ -62,7 +63,7 @@ class DemoFlowService {
             'level': level,
             'min_level': level > 1 ? level - 1 : 1,
             'max_level': level < 5 ? level + 1 : 5,
-            'match_date': matchDate.toUtc().toIso8601String(),
+            'match_date': DateTimeUtils.toIsoUtc(matchDate),
             'location': location,
             'has_court': false,
             'court_price': '',
@@ -86,7 +87,7 @@ class DemoFlowService {
           .insert({
             'player1_id': opponentId,
             'player2_id': userId,
-            'match_date': matchDate.toUtc().toIso8601String(),
+            'match_date': DateTimeUtils.toIsoUtc(matchDate),
             'location': location,
             'status': 'scheduled',
           })

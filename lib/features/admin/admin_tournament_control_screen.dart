@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants/query_limits.dart';
+import '../../core/utils/datetime_utils.dart';
 import 'package:intl/intl.dart';
 import '../tournament/tournament_detail_screen.dart';
 import '../tournament/tournament_engine.dart';
@@ -1274,6 +1275,20 @@ class _AdminTournamentControlScreenState
       }
     }
 
+    final disputeReason = match['dispute_reason']?.toString().trim() ?? '';
+    final disputeById = match['dispute_by_user_id']?.toString();
+    final disputeByName = disputeById != null
+        ? _participantDisplayName(disputeById)
+        : 'Nežinomas žaidėjas';
+    final disputeAtRaw = match['dispute_created_at']?.toString();
+    String disputeAtLabel = '';
+    if (disputeAtRaw != null && disputeAtRaw.isNotEmpty) {
+      final dt = DateTime.tryParse(disputeAtRaw);
+      if (dt != null) {
+        disputeAtLabel = DateFormat('yyyy-MM-dd HH:mm').format(dt.toLocal());
+      }
+    }
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1288,88 +1303,144 @@ class _AdminTournamentControlScreenState
             ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              "Žaidėjai nesutaria dėl rezultato. Įveskite galutinį, teisingą rezultatą. Tai uždarys mačą.",
-              style: TextStyle(color: QortColors.textSecondary, fontSize: 12),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Text(
-                    p1Name,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (disputeReason.isNotEmpty) ...[
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.red.withValues(alpha: 0.35)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            LucideIcons.messageSquare,
+                            color: Colors.red,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              disputeByName,
+                              style: const TextStyle(
+                                color: QortColors.textPrimary,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          if (disputeAtLabel.isNotEmpty)
+                            Text(
+                              disputeAtLabel,
+                              style: const TextStyle(
+                                color: QortColors.textSecondary,
+                                fontSize: 11,
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        disputeReason,
+                        style: const TextStyle(
+                          color: QortColors.textPrimary,
+                          fontSize: 13,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const Text(" VS ", style: TextStyle(color: QortColors.textSecondary)),
-                Expanded(
-                  child: Text(
-                    p2Name,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
+                const SizedBox(height: 16),
               ],
-            ),
-            const SizedBox(height: 15),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SizedBox(
-                  width: 50,
-                  child: TextField(
-                    controller: s1Ctrl,
-                    keyboardType: TextInputType.number,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: QortColors.textPrimary, fontSize: 20),
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: Colors.black45,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide.none,
+              const Text(
+                "Įveskite galutinį, teisingą rezultatą. Tai uždarys mačą.",
+                style: TextStyle(color: QortColors.textSecondary, fontSize: 12),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Text(
+                      p1Name,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
-                ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 10),
-                  child: Text(
-                    ":",
-                    style: TextStyle(color: QortColors.textSecondary, fontSize: 20),
-                  ),
-                ),
-                SizedBox(
-                  width: 50,
-                  child: TextField(
-                    controller: s2Ctrl,
-                    keyboardType: TextInputType.number,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: QortColors.textPrimary, fontSize: 20),
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: Colors.black45,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide.none,
+                  const Text(" VS ", style: TextStyle(color: QortColors.textSecondary)),
+                  Expanded(
+                    child: Text(
+                      p2Name,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+              const SizedBox(height: 15),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 50,
+                    child: TextField(
+                      controller: s1Ctrl,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: QortColors.textPrimary, fontSize: 20),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: Colors.black45,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 10),
+                    child: Text(
+                      ":",
+                      style: TextStyle(color: QortColors.textSecondary, fontSize: 20),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 50,
+                    child: TextField(
+                      controller: s2Ctrl,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: QortColors.textPrimary, fontSize: 20),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: Colors.black45,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -1668,7 +1739,7 @@ class _AdminTournamentControlScreenState
     );
     if (picked != null && mounted) {
       setState(() {
-        _stages[stageIndex][field] = picked.toIso8601String();
+        _stages[stageIndex][field] = DateTimeUtils.toIsoUtc(picked);
       });
     }
   }
@@ -3145,10 +3216,10 @@ class _BulkScheduleScreenState extends State<BulkScheduleScreen> {
         if (m['scheduled_time'] != null &&
             m['status'] != 'completed' &&
             m['status'] != 'cancelled') {
-          DateTime dt = DateTime.parse(
-            m['scheduled_time'],
-          ).toLocal().add(Duration(minutes: minutes));
-          String newIso = dt.toUtc().toIso8601String();
+          DateTime dt = DateTimeUtils.fromIso(
+            m['scheduled_time'].toString(),
+          ).add(Duration(minutes: minutes));
+          String newIso = DateTimeUtils.toIsoUtc(dt);
           await client
               .from('matches')
               .update({'scheduled_time': newIso})
@@ -3176,7 +3247,7 @@ class _BulkScheduleScreenState extends State<BulkScheduleScreen> {
 
   void _showEditDialog(Map<String, dynamic> match, int index) {
     DateTime? selectedDate = match['scheduled_time'] != null
-        ? DateTime.parse(match['scheduled_time']).toLocal()
+        ? DateTimeUtils.fromIso(match['scheduled_time'].toString())
         : null;
     TimeOfDay? selectedTime = selectedDate != null
         ? TimeOfDay.fromDateTime(selectedDate)
@@ -3310,13 +3381,15 @@ class _BulkScheduleScreenState extends State<BulkScheduleScreen> {
                 onPressed: () async {
                   String? isoTime;
                   if (selectedDate != null && selectedTime != null) {
-                    isoTime = DateTime(
-                      selectedDate!.year,
-                      selectedDate!.month,
-                      selectedDate!.day,
-                      selectedTime!.hour,
-                      selectedTime!.minute,
-                    ).toUtc().toIso8601String();
+                    isoTime = DateTimeUtils.toIsoUtc(
+                      DateTime(
+                        selectedDate!.year,
+                        selectedDate!.month,
+                        selectedDate!.day,
+                        selectedTime!.hour,
+                        selectedTime!.minute,
+                      ),
+                    );
                   }
                   setState(() => _isLoading = true);
                   Navigator.pop(ctx);
@@ -3421,7 +3494,7 @@ class _BulkScheduleScreenState extends State<BulkScheduleScreen> {
                       int idx = _localMatches.indexOf(m);
                       String st = m['scheduled_time'] != null
                           ? DateFormat('MM-dd HH:mm').format(
-                              DateTime.parse(m['scheduled_time']).toLocal(),
+                              DateTimeUtils.fromIso(m['scheduled_time'].toString()),
                             )
                           : "Nepaskirta";
                       return Card(

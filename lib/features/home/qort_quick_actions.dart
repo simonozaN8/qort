@@ -100,8 +100,8 @@ class QortQuickActions {
                   Navigator.pop(ctx);
                   if (user.sportsList.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text(
+                      const SnackBar(
+                        content: Text(
                           'Pirmiausia profilyje pridėkite bent vieną sporto šaką.',
                         ),
                         backgroundColor: QortModeColors.warning,

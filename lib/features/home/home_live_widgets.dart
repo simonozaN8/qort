@@ -295,7 +295,7 @@ _HeroCopy _copyForMode(
             : 'Skelbk arba priimk atvirą mačą',
       );
     case AppMode.blitz:
-      return _HeroCopy(
+      return const _HeroCopy(
         'BLITZ',
         'Greitas formatas',
         'Atidarykite Blitz skirtuką ir pradėkite',
