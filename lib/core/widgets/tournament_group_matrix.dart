@@ -8,6 +8,7 @@ import '../theme/qort_palette_extension.dart';
 class TournamentGroupMatrix extends StatelessWidget {
   final String groupName;
   final List<Map<String, dynamic>> matches;
+  final List<String> groupPlayerIds;
   final String Function(String playerId) resolveName;
   final String? currentUserId;
 
@@ -15,6 +16,7 @@ class TournamentGroupMatrix extends StatelessWidget {
     super.key,
     required this.groupName,
     required this.matches,
+    this.groupPlayerIds = const [],
     required this.resolveName,
     this.currentUserId,
   });
@@ -24,11 +26,15 @@ class TournamentGroupMatrix extends StatelessWidget {
     final p = context.qortPalette;
     final lossColor = Theme.of(context).colorScheme.error;
     final playerIds = <String>{};
+    for (final id in groupPlayerIds) {
+      if (id.isNotEmpty) playerIds.add(id);
+    }
     for (final m in matches) {
       if (m['player1_id'] != null) playerIds.add(m['player1_id'].toString());
       if (m['player2_id'] != null) playerIds.add(m['player2_id'].toString());
     }
-    final players = playerIds.toList();
+    final players = playerIds.toList()
+      ..sort((a, b) => resolveName(a).compareTo(resolveName(b)));
     final matchMap = <String, dynamic>{};
     for (final m in matches) {
       final p1 = m['player1_id'].toString();
@@ -41,8 +47,7 @@ class TournamentGroupMatrix extends StatelessWidget {
     if (!displayName.contains('GRUPĖ')) displayName = 'GRUPĖ $displayName';
 
     return Container(
-      margin: const EdgeInsets.all(10),
-      constraints: const BoxConstraints(maxHeight: 420),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         color: p.surface,
         borderRadius: BorderRadius.circular(16),
@@ -57,10 +62,11 @@ class TournamentGroupMatrix extends StatelessWidget {
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: p.surfaceElevated,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
@@ -83,14 +89,11 @@ class TournamentGroupMatrix extends StatelessWidget {
               ],
             ),
           ),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.vertical,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Table(
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Table(
                     defaultColumnWidth: const FixedColumnWidth(68),
                     columnWidths: const {0: FixedColumnWidth(96)},
                     border: TableBorder.all(color: p.border, width: 1),
@@ -147,8 +150,6 @@ class TournamentGroupMatrix extends StatelessWidget {
                   ),
                 ),
               ),
-            ),
-          ),
         ],
       ),
     );

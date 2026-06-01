@@ -34,7 +34,6 @@ class TournamentBracketView extends StatefulWidget {
 }
 
 class _TournamentBracketViewState extends State<TournamentBracketView> {
-  final PageController _pageController = PageController(viewportFraction: 0.95);
   String? _currentUserId;
   String _selectedStageId = '';
   List<Map<String, dynamic>> _availableStages = [];
@@ -920,12 +919,65 @@ class _TournamentBracketViewState extends State<TournamentBracketView> {
     return "PAGUODA";
   }
 
+  static String _groupKey(String name) {
+    var s = name.trim();
+    final lower = s.toLowerCase();
+    if (lower.startsWith('grupė ')) {
+      s = s.substring(6).trim();
+    } else if (lower.startsWith('grupe ')) {
+      s = s.substring(6).trim();
+    }
+    return s.toUpperCase();
+  }
+
+  bool _stageHasGroupMatches(List<Map<String, dynamic>> stageMatches) {
+    return stageMatches.any((m) {
+      final g = m['group_name']?.toString().trim();
+      return g != null && g.isNotEmpty;
+    });
+  }
+
+  List<String> _playerIdsForGroup(
+    String groupName,
+    List<Map<String, dynamic>> stageMatches,
+  ) {
+    final key = _groupKey(groupName);
+    final ids = <String>{};
+    for (final m in stageMatches) {
+      final mGroup = _groupKey(m['group_name']?.toString() ?? '');
+      if (mGroup != key) continue;
+
+      final p1 = m['player1_id']?.toString();
+      final p2 = m['player2_id']?.toString();
+      if (p1 != null && p1.isNotEmpty) ids.add(p1);
+      if (p2 != null && p2.isNotEmpty) ids.add(p2);
+    }
+    return ids.toList();
+  }
+
   Widget _buildGroupMatrixView(List<Map<String, dynamic>> stageMatches) {
+    if (!_stageHasGroupMatches(stageMatches)) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'Šis etapas neturi grupių — matrica rodoma tik grupių etapams.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: QortColors.textSecondary,
+              fontSize: 14,
+              height: 1.4,
+            ),
+          ),
+        ),
+      );
+    }
+
     Map<String, List<Map<String, dynamic>>> groups = {};
     for (var m in stageMatches) {
-      String gName = m['group_name'] ?? "A";
-      if (!groups.containsKey(gName)) groups[gName] = [];
-      groups[gName]!.add(m);
+      final gName = m['group_name']?.toString().trim();
+      if (gName == null || gName.isEmpty) continue;
+      groups.putIfAbsent(gName, () => []).add(m);
     }
     final groupNames = groups.keys.toList()..sort();
 
@@ -938,21 +990,20 @@ class _TournamentBracketViewState extends State<TournamentBracketView> {
       );
     }
 
-    return PageView.builder(
-      controller: _pageController,
-      itemCount: groupNames.length,
-      itemBuilder: (context, index) {
-        String gName = groupNames[index];
-        List<Map<String, dynamic>> matches = groups[gName]!;
-        return Center(
-          child: TournamentGroupMatrix(
-            groupName: gName,
-            matches: matches,
+    return ListView(
+      padding: const EdgeInsets.only(top: 16, bottom: 24),
+      children: [
+        for (int i = 0; i < groupNames.length; i++) ...[
+          if (i > 0) const SizedBox(height: 24),
+          TournamentGroupMatrix(
+            groupName: groupNames[i],
+            matches: groups[groupNames[i]]!,
+            groupPlayerIds: _playerIdsForGroup(groupNames[i], stageMatches),
             currentUserId: _currentUserId,
             resolveName: (id) => _getName(id),
           ),
-        );
-      },
+        ],
+      ],
     );
   }
 }
