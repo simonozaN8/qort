@@ -25,6 +25,8 @@ import '../../core/utils/sport_levels.dart';
 import '../../core/utils/tournament_format_utils.dart';
 import '../teams/create_team_screen.dart';
 import '../teams/team_model.dart';
+import '../../core/widgets/stock_image_attribution.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class TournamentDetailScreen extends StatefulWidget {
   final Map<String, dynamic> tournament;
@@ -1176,11 +1178,30 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
         (t['organizer']?.toString().isNotEmpty == true) ||
         (t['sponsor']?.toString().isNotEmpty == true);
 
+    final coverUrl = t['image_url']?.toString();
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (coverUrl != null && coverUrl.isNotEmpty) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: CachedNetworkImage(
+                  imageUrl: coverUrl,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            StockImageAttribution(data: t),
+            const SizedBox(height: 20),
+          ] else if (StockImageAttribution.shouldShow(t)) ...[
+            StockImageAttribution(data: t),
+            const SizedBox(height: 12),
+          ],
           Container(
             padding: const EdgeInsets.all(15),
             decoration: BoxDecoration(

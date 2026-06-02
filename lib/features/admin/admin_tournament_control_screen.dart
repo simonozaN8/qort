@@ -1,5 +1,10 @@
+import 'dart:io';
 import 'dart:math';
+
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/theme/qort_colors.dart';
 import '../../core/theme/qort_design_system.dart';
 import '../../core/theme/qort_palette_extension.dart';
@@ -9,10 +14,16 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants/query_limits.dart';
+import '../../core/services/event_sponsor_service.dart';
 import '../../core/utils/datetime_utils.dart';
 import 'package:intl/intl.dart';
 import '../tournament/tournament_detail_screen.dart';
 import '../tournament/tournament_engine.dart';
+import 'tournament_composer_widget.dart';
+import 'tournament_composer_share_sheet.dart';
+import 'tournament_composer_preview.dart';
+import '../../core/widgets/tournament_cover_color_filters.dart';
+import 'tournament_sponsor_band.dart';
 
 class AdminTournamentControlScreen extends StatefulWidget {
   final Map<String, dynamic> tournament;
@@ -25,6 +36,14 @@ class AdminTournamentControlScreen extends StatefulWidget {
 
 class _AdminTournamentControlScreenState
     extends State<AdminTournamentControlScreen> {
+  static const List<String> _sponsorLabelSuggestions = [
+    "Generalinis rėmėjas",
+    "Mecenatas",
+    "Aukso rėmėjas",
+    "Sidabro rėmėjas",
+    "Partneris",
+    "Bendradarbis",
+  ];
   bool _isLoading = false;
   List<dynamic> _participants = [];
   List<dynamic> _existingMatches = [];
@@ -39,6 +58,13 @@ class _AdminTournamentControlScreenState
 
   bool _isParticipantsExpanded = false;
   final Map<String, String> _orphanGroupByUserId = {};
+  File? _pendingCoverFile;
+  Uint8List? _pendingCoverBytes;
+  bool _flipHorizontal = false;
+  String _coverFilterPreset = 'original';
+  bool _pendingCoverTransforms = false;
+  List<EventSponsor> _eventSponsors = [];
+  bool _loadingSponsors = false;
 
   String _venueType = "Aikštelė";
   List<String> _venueTypes = [];
@@ -786,6 +812,15 @@ class _AdminTournamentControlScreenState
           .limit(QueryLimits.tournamentMatches);
       final dMatches = mData.where((m) => m['status'] == 'disputed').toList();
 
+      // Sponsors (event-level)
+      final eventId = widget.tournament['event_id']?.toString();
+      List<EventSponsor> sponsors = [];
+      if (eventId != null && eventId.isNotEmpty) {
+        try {
+          sponsors = await EventSponsorService.listByEvent(eventId);
+        } catch (_) {}
+      }
+
       try {
         final tData = await client
             .from('tournaments')
@@ -835,6 +870,7 @@ class _AdminTournamentControlScreenState
           _globalInjuries = tempGlobalInjuries;
           _existingMatches = mData;
           _disputedMatches = dMatches;
+          _eventSponsors = sponsors;
           _isLoading = false;
         });
       }
@@ -2158,8 +2194,559 @@ class _AdminTournamentControlScreenState
     );
   }
 
+  DateTime? _parseTournamentDate(dynamic raw) {
+    if (raw == null) return null;
+    try {
+      return DateTime.parse(raw.toString());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  TournamentComposerWidget _buildComposerWidget() {
+    final t = widget.tournament;
+    final usePending =
+        _pendingCoverFile != null || _pendingCoverBytes != null || _pendingCoverTransforms;
+    return TournamentComposerWidget(
+      // if only transforms changed, keep showing current url
+      imageUrl: (usePending && _pendingCoverFile == null && _pendingCoverBytes == null)
+          ? t['image_url']?.toString()
+          : (usePending ? null : t['image_url']?.toString()),
+      imageFile: _pendingCoverFile,
+      imageBytes: _pendingCoverBytes,
+      eventName: t['name']?.toString() ?? 'TURNYRAS',
+      sport: t['sport']?.toString() ?? '',
+      location: t['location']?.toString(),
+      startDate: _parseTournamentDate(t['start_date']),
+      endDate: _parseTournamentDate(t['end_date']),
+      price: (t['entry_fee'] as num?)?.toDouble(),
+      levels: const [],
+      description: null,
+      organizerName: null,
+      flipHorizontal: usePending
+          ? _flipHorizontal
+          : (t['image_flip_horizontal'] == true),
+      colorFilterPreset: usePending ? _coverFilterPreset : t['cover_filter_preset']?.toString(),
+    );
+  }
+
+  Future<void> _saveCoverTransforms() async {
+    final tId = widget.tournament['id']?.toString();
+    if (tId == null || tId.isEmpty) return;
+    await Supabase.instance.client.from('tournaments').update({
+      'image_flip_horizontal': _flipHorizontal,
+      'cover_filter_preset': _coverFilterPreset,
+    }).eq('id', tId);
+    if (!mounted) return;
+    setState(() {
+      widget.tournament['image_flip_horizontal'] = _flipHorizontal;
+      widget.tournament['cover_filter_preset'] = _coverFilterPreset;
+      _pendingCoverTransforms = false;
+    });
+  }
+
+  Future<void> _pickTournamentCoverImage() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+
+    try {
+      final bytes = await picked.readAsBytes();
+      final ext = picked.name.split('.').last.toLowerCase();
+      final safeExt = ['jpg', 'jpeg', 'png', 'webp'].contains(ext) ? ext : 'jpg';
+      final tId = widget.tournament['id'].toString();
+      final path =
+          '$tId/organizer_${DateTime.now().millisecondsSinceEpoch}.$safeExt';
+
+      await Supabase.instance.client.storage
+          .from('tournament-images')
+          .uploadBinary(path, bytes);
+
+      final url = Supabase.instance.client.storage
+          .from('tournament-images')
+          .getPublicUrl(path);
+
+      // new image resets transformations
+      _flipHorizontal = false;
+      _coverFilterPreset = 'original';
+
+      await Supabase.instance.client.from('tournaments').update({
+        'image_url': url,
+        'cover_source': 'organizer_upload',
+        'cover_template_id': null,
+        'cover_filter_preset': _coverFilterPreset,
+        'image_flip_horizontal': _flipHorizontal,
+        'image_photographer': null,
+        'image_source': null,
+        'image_source_url': null,
+      }).eq('id', tId);
+
+      if (!mounted) return;
+      setState(() {
+        widget.tournament['image_url'] = url;
+        widget.tournament['cover_source'] = 'organizer_upload';
+        widget.tournament['cover_template_id'] = null;
+        widget.tournament['cover_filter_preset'] = _coverFilterPreset;
+        widget.tournament['image_flip_horizontal'] = _flipHorizontal;
+        _pendingCoverFile = null;
+        _pendingCoverBytes = null;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Turnyro vaizdas atnaujintas')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Klaida: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  void _openShareSheet() {
+    showTournamentComposerShareSheet(
+      context: context,
+      tournamentId: widget.tournament['id'].toString(),
+      composer: _buildComposerWidget(),
+    );
+  }
+
+  Future<void> _addSponsorForEvent() async {
+    final eventId = widget.tournament['event_id']?.toString();
+    if (eventId == null || eventId.isEmpty) return;
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 90,
+    );
+    if (picked == null) return;
+
+    setState(() => _loadingSponsors = true);
+
+    try {
+      final bytes = await picked.readAsBytes();
+      final ext = picked.name.split('.').last.toLowerCase();
+      final safeExt = ['jpg', 'jpeg', 'png', 'webp'].contains(ext) ? ext : 'png';
+      final path =
+          'event_sponsors/$eventId/${DateTime.now().millisecondsSinceEpoch}.$safeExt';
+
+      await Supabase.instance.client.storage
+          .from('tournament-images')
+          .uploadBinary(path, bytes);
+      final url = Supabase.instance.client.storage
+          .from('tournament-images')
+          .getPublicUrl(path);
+
+      await EventSponsorService.add(
+        eventId: eventId,
+        logoUrl: url,
+        displayOrder: _eventSponsors.length,
+      );
+      await _loadData();
+    } catch (e) {
+      if (!mounted) return;
+      _showError('Klaida: $e');
+      setState(() => _loadingSponsors = false);
+    }
+  }
+
+  Future<void> _removeSponsor(String id) async {
+    await EventSponsorService.remove(id);
+    await _loadData();
+  }
+
+  Future<void> _setMainSponsor(String id) async {
+    await EventSponsorService.setMain(id);
+    await _loadData();
+  }
+
+  Future<void> _editSponsor(EventSponsor sponsor) async {
+    final nameCtrl = TextEditingController(text: sponsor.name ?? '');
+    final labelCtrl = TextEditingController(text: sponsor.sponsorLabel ?? '');
+    final websiteCtrl = TextEditingController(text: sponsor.websiteUrl ?? '');
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Redaguoti rėmėją'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Pavadinimas'),
+                ),
+                const SizedBox(height: 10),
+                Autocomplete<String>(
+                  optionsBuilder: (value) {
+                    final q = value.text.trim().toLowerCase();
+                    if (q.isEmpty) return const Iterable<String>.empty();
+                    return _sponsorLabelSuggestions.where(
+                      (o) => o.toLowerCase().contains(q),
+                    );
+                  },
+                  onSelected: (v) => labelCtrl.text = v,
+                  fieldViewBuilder: (context, ctrl, focus, onSubmit) {
+                    if (ctrl.text != labelCtrl.text) {
+                      ctrl.text = labelCtrl.text;
+                      ctrl.selection = TextSelection.fromPosition(
+                        TextPosition(offset: ctrl.text.length),
+                      );
+                    }
+                    return TextField(
+                      controller: ctrl,
+                      focusNode: focus,
+                      onChanged: (v) => labelCtrl.text = v,
+                      decoration: const InputDecoration(
+                        labelText: 'Tipas (pvz. Generalinis rėmėjas)',
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: websiteCtrl,
+                  decoration: const InputDecoration(labelText: 'Website'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Atšaukti'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Išsaugoti'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (ok != true) return;
+    await EventSponsorService.update(
+      sponsor.id,
+      name: nameCtrl.text.trim().isEmpty ? null : nameCtrl.text.trim(),
+      sponsorLabel: labelCtrl.text.trim().isEmpty ? null : labelCtrl.text.trim(),
+      websiteUrl:
+          websiteCtrl.text.trim().isEmpty ? null : websiteCtrl.text.trim(),
+    );
+    await _loadData();
+  }
+
+  Widget _buildSponsorsSection() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: QortColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: QortColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'RĖMĖJAI',
+            style: GoogleFonts.oswald(
+              color: QortColors.primary,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (_loadingSponsors)
+            const Center(child: CircularProgressIndicator(strokeWidth: 2))
+          else if (_eventSponsors.isEmpty)
+            const Text(
+              'Rėmėjų nėra.',
+              style: TextStyle(color: QortColors.textSecondary, fontSize: 12),
+            )
+          else
+            Column(
+              children: _eventSponsors.map((s) {
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: QortColors.surfaceElevated,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: QortColors.border),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 52,
+                        height: 52,
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.95),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: CachedNetworkImage(
+                          imageUrl: s.logoUrl,
+                          fit: BoxFit.contain,
+                          errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              s.name?.toString().isNotEmpty == true
+                                  ? s.name!.toString()
+                                  : 'Rėmėjas',
+                              style: const TextStyle(
+                                color: QortColors.textPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            if ((s.sponsorLabel?.trim().isNotEmpty ?? false))
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  s.sponsorLabel!.trim(),
+                                  style: const TextStyle(
+                                    color: QortColors.textSecondary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Redaguoti',
+                        onPressed: () => _editSponsor(s),
+                        icon: const Icon(
+                          LucideIcons.pencil,
+                          color: QortColors.textSecondary,
+                          size: 18,
+                        ),
+                      ),
+                      Switch(
+                        value: s.isMain,
+                        activeColor: const Color(0xFFD946EF),
+                        onChanged: (v) => v ? _setMainSponsor(s.id) : null,
+                      ),
+                      IconButton(
+                        onPressed: () => _removeSponsor(s.id),
+                        icon: const Icon(
+                          LucideIcons.trash2,
+                          color: Colors.redAccent,
+                          size: 18,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _addSponsorForEvent,
+              icon: const Icon(LucideIcons.plus, size: 18),
+              label: const Text('Pridėti rėmėją'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTournamentCoverSection() {
+    final hasCover = widget.tournament['image_url'] != null ||
+        _pendingCoverFile != null ||
+        _pendingCoverBytes != null;
+    final usePending = _pendingCoverFile != null || _pendingCoverBytes != null;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: QortColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: QortColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'TURNYRO VAIZDAS',
+            style: GoogleFonts.oswald(
+              color: QortColors.primary,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (hasCover)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(
+                        Icons.flip,
+                        size: 20,
+                        color: QortColors.textSecondary,
+                      ),
+                      tooltip: 'Veidrodis',
+                      onPressed: () async {
+                        setState(() {
+                          _flipHorizontal = !_flipHorizontal;
+                          _pendingCoverTransforms = true;
+                        });
+                        await _saveCoverTransforms();
+                      },
+                      padding: const EdgeInsets.all(4),
+                      constraints:
+                          const BoxConstraints(minWidth: 32, minHeight: 32),
+                    ),
+                    const SizedBox(width: 4),
+                    ...TournamentCoverColorFilters.presets.entries.map((e) {
+                      final key = e.key;
+                      final current = usePending
+                          ? _coverFilterPreset
+                          : (widget.tournament['cover_filter_preset']?.toString() ??
+                              'original');
+                      final selected = current == key;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: ChoiceChip(
+                          label: Text(
+                            e.value,
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          selected: selected,
+                          onSelected: (_) async {
+                            setState(() {
+                              _coverFilterPreset = key;
+                              _pendingCoverTransforms = true;
+                            });
+                            await _saveCoverTransforms();
+                          },
+                          selectedColor:
+                              const Color(0xFFD946EF).withValues(alpha: 0.18),
+                          backgroundColor: QortColors.surfaceElevated,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 0,
+                          ),
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                          labelStyle: TextStyle(
+                            color: selected
+                                ? QortColors.textPrimary
+                                : QortColors.textSecondary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          side: BorderSide(
+                            color:
+                                selected ? const Color(0xFFD946EF) : QortColors.border,
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: hasCover
+                ? TournamentComposerPreview(
+                    composer: _buildComposerWidget(),
+                    sponsorBand: TournamentSponsorBand(
+                      compact: false,
+                      mainSponsor: (() {
+                        final main = _eventSponsors.where((s) => s.isMain).toList();
+                        return main.isNotEmpty ? main.first : null;
+                      })(),
+                      extraSponsors: _eventSponsors.where((s) => !s.isMain).toList(),
+                    ),
+                  )
+                : _coverPlaceholder(),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _pickTournamentCoverImage,
+              icon: const Icon(LucideIcons.camera, size: 18),
+              label: Text(
+                hasCover ? 'Keisti nuotrauką' : 'Įkelti nuotrauką',
+                style: GoogleFonts.bebasNeue(fontSize: 16, letterSpacing: 1),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFD946EF),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: hasCover ? _openShareSheet : null,
+              icon: const Icon(LucideIcons.share2, size: 18),
+              label: Text(
+                'DALINTIS SOC TINKLUOSE',
+                style: GoogleFonts.bebasNeue(
+                  color: QortColors.primary,
+                  fontSize: 16,
+                  letterSpacing: 1,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: QortColors.primary,
+                side: const BorderSide(color: QortColors.primary),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _coverPlaceholder() {
+    return Container(
+      color: QortColors.surfaceElevated,
+      child: const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(LucideIcons.imageOff, color: QortColors.textSecondary, size: 36),
+            SizedBox(height: 8),
+            Text(
+              'Vaizdas nepasirinktas',
+              style: TextStyle(color: QortColors.textSecondary, fontSize: 13),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildBendraInfo() {
-    final p = context.qortPalette;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2198,6 +2785,14 @@ class _AdminTournamentControlScreenState
             ],
           ),
         ),
+        const SizedBox(height: 30),
+
+        _buildTournamentCoverSection(),
+
+        const SizedBox(height: 30),
+
+        _buildSponsorsSection(),
+
         const SizedBox(height: 30),
 
         _buildDeferredRoutingBanner(),

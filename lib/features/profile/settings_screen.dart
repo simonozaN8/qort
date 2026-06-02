@@ -8,6 +8,7 @@ import '../../core/services/sports_catalog_service.dart';
 import '../../core/theme/qort_colors.dart';
 import '../../core/theme/qort_palette_extension.dart';
 import '../design/gemini_visual_studio_screen.dart';
+import '../admin/sport_image_pool_screen.dart';
 import '../../core/widgets/qort_theme_picker.dart';
 import '../../core/utils/sport_levels.dart';
 import '../../core/utils/sport_icons.dart';
@@ -400,6 +401,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             const QortThemePicker(),
             const SizedBox(height: 20),
+            Material(
+              color: p.surface,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const SportImagePoolScreen(),
+                  ),
+                ),
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: p.border),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(LucideIcons.image, color: p.primary),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'AI sporto vaizdų pool',
+                              style: TextStyle(
+                                color: p.textPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              'Gemini 2.5 Flash Image — šablonai turnyrų viršelėms',
+                              style: TextStyle(
+                                color: p.textSecondary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(LucideIcons.chevronRight, color: p.textSecondary),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
             Material(
               color: p.surface,
               borderRadius: BorderRadius.circular(14),

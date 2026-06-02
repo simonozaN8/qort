@@ -22,25 +22,31 @@ class OpenEventsService {
   }) async {
     final client = Supabase.instance.client;
 
-    final eventsBase = client
-        .from('events')
-        .select()
-        .eq('status', 'open')
-        .eq('approval_status', EventOrganizerPolicy.approvalApproved);
+    final eventsBase = client.from('events').select('''
+      id, created_at, owner_id,
+      name, sport, location, description, organizer,
+      image_url, image_flip_horizontal, cover_filter_preset, start_date, end_date,
+      status, approval_status,
+      tournaments(id, name, format_code, gender, min_rp, max_rp, entry_fee),
+      event_sponsors(id, logo_url, name, sponsor_label, is_main, display_order)
+    ''').eq('status', 'open').eq(
+          'approval_status',
+          EventOrganizerPolicy.approvalApproved,
+        );
 
-    final tournamentsBase = client
-        .from('tournaments')
-        .select()
-        .eq('status', 'open');
+    final tournamentsBase = client.from('tournaments').select().eq(
+          'status',
+          'open',
+        );
 
     final List<dynamic> eventsRes;
     final List<dynamic> tournamentsRes;
 
     switch (sortMode) {
       case OpenEventsSortMode.newest:
-        eventsRes = await eventsBase
-            .order('created_at', ascending: false)
-            .limit(limit);
+        eventsRes = await eventsBase.order('created_at', ascending: false).limit(
+              limit,
+            );
         tournamentsRes = await tournamentsBase
             .order('created_at', ascending: false)
             .limit(limit);
@@ -57,7 +63,12 @@ class OpenEventsService {
 
     final combined = <dynamic>[];
 
-    for (final e in eventsRes) {
+    final filteredEvents = eventsRes.where((e) {
+      final tournaments = e['tournaments'] as List?;
+      return tournaments != null && tournaments.isNotEmpty;
+    }).toList();
+
+    for (final e in filteredEvents) {
       e['is_parent_event'] = true;
       combined.add(e);
     }

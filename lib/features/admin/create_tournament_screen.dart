@@ -1,4 +1,6 @@
-import 'dart:typed_data';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -8,10 +10,15 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/constants/event_organizer_policy.dart';
 import '../../core/models/sport_catalog_entry.dart';
 import '../../core/services/sports_catalog_service.dart';
+import '../../core/services/event_sponsor_service.dart';
 import '../../core/utils/sport_levels.dart';
 import '../../core/theme/qort_colors.dart';
 import '../../core/widgets/qort_form_help.dart';
+import '../../core/widgets/tournament_cover_color_filters.dart';
 import '../teams/team_formats.dart';
+import 'tournament_composer_widget.dart';
+import 'tournament_composer_preview.dart';
+import 'tournament_sponsor_band.dart';
 
 class CreateEventScreen extends StatefulWidget {
   /// `true` = paraiška per „+“ (mokama, laukia QORT patvirtinimo).
@@ -25,6 +32,14 @@ class CreateEventScreen extends StatefulWidget {
 }
 
 class _CreateEventScreenState extends State<CreateEventScreen> {
+  static const List<String> _sponsorLabelSuggestions = [
+    "Generalinis rėmėjas",
+    "Mecenatas",
+    "Aukso rėmėjas",
+    "Sidabro rėmėjas",
+    "Partneris",
+    "Bendradarbis",
+  ];
   final _nameCtrl = TextEditingController();
   final _locationCtrl = TextEditingController();
   final _descriptionCtrl = TextEditingController();
@@ -36,7 +51,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   final _rpValueCtrl = TextEditingController(text: "1000");
   final _organizerCtrl = TextEditingController();
   final _organizerNoteCtrl = TextEditingController();
-  final _sponsorCtrl = TextEditingController();
   bool _acceptedOrganizerTerms = false;
 
   final _minAgeCtrl = TextEditingController(text: "16");
@@ -53,10 +67,12 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   DateTime _endDate = DateTime.now().add(const Duration(days: 14));
   bool _isLoading = false;
 
-  Uint8List? _imageBytes;
-  String? _imageExtension;
-  Uint8List? _sponsorImageBytes;
-  String? _sponsorImageExtension;
+  File? _coverImageFile;
+  Uint8List? _coverImageBytes;
+  bool _flipHorizontal = false;
+  String _coverFilterPreset = 'original';
+  // Sponsor logotipai dabar per `event_sponsors` lentelę.
+  final List<_SponsorDraft> _sponsors = [];
 
   final List<Map<String, dynamic>> _divisions = [];
   final ImagePicker _picker = ImagePicker();
@@ -151,7 +167,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     _rpValueCtrl.dispose();
     _organizerCtrl.dispose();
     _organizerNoteCtrl.dispose();
-    _sponsorCtrl.dispose();
     _minAgeCtrl.dispose();
     _maxAgeCtrl.dispose();
     _minRpCtrl.dispose();
@@ -159,24 +174,161 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     super.dispose();
   }
 
-  Future<void> _pickImage(bool isSponsor) async {
-    final pickedFile = await _picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 70,
-    );
-    if (pickedFile != null) {
-      final bytes = await pickedFile.readAsBytes();
-      setState(() {
-        if (isSponsor) {
-          _sponsorImageBytes = bytes;
-          _sponsorImageExtension = pickedFile.name.split('.').last;
-        } else {
-          _imageBytes = bytes;
-          _imageExtension = pickedFile.name.split('.').last;
-        }
-      });
+  bool get _hasCover =>
+      _coverImageFile != null ||
+      (_coverImageBytes != null && _coverImageBytes!.isNotEmpty);
+
+  bool get _hasName => _nameCtrl.text.trim().isNotEmpty;
+
+  bool get _hasSport =>
+      _selectedSport.isNotEmpty && _sportOptions.isNotEmpty;
+
+  bool get _canSubmitEvent =>
+      _hasCover &&
+      _hasName &&
+      _hasSport &&
+      !_isLoading &&
+      (!widget.requiresApproval || _acceptedOrganizerTerms);
+
+  String? _genderCodeForDivision(Map<String, dynamic> div) {
+    final raw = div['gender']?.toString();
+    if (raw == null) return null;
+    final low = raw.toLowerCase();
+    if (low.contains('vyrai') || low.contains('men')) return 'Men';
+    if (low.contains('mot') || low.contains('women')) return 'Women';
+    if (low.contains('visi') || low.contains('atvira') || low.contains('mix')) {
+      return 'MIX';
     }
+    return null;
   }
+
+  List<TournamentLevelInfo> _levelsForPreview() {
+    final ev = _nameCtrl.text.trim();
+    return _divisions.map((div) {
+      final tournamentName = '$ev - ${div['name']?.toString() ?? ''}';
+      final label = TournamentLevelInfo.stripEventPrefix(
+        tournamentName: tournamentName,
+        eventName: ev,
+      );
+      return TournamentLevelInfo(
+        levelName: label,
+        formatCode: div['format_code']?.toString() ?? '1v1',
+        gender: _genderCodeForDivision(div),
+        minRp: int.tryParse(_minRpCtrl.text) ?? 0,
+        maxRp: 3000,
+      );
+    }).toList();
+  }
+
+  double? get _entryPrice => double.tryParse(_priceCtrl.text);
+
+  Future<void> _addSponsorDraft() async {
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    setState(() {
+      _sponsors.add(_SponsorDraft(bytes: bytes));
+    });
+  }
+
+  void _toggleMainSponsor(int idx, bool value) {
+    setState(() {
+      for (var i = 0; i < _sponsors.length; i++) {
+        _sponsors[i] = _sponsors[i].copyWith(isMain: i == idx ? value : false);
+      }
+    });
+  }
+
+  List<EventSponsor> _extraSponsorsForPreview() {
+    final list = _sponsors
+        .where((s) => !s.isMain)
+        .where((s) => s.bytes != null)
+        .toList();
+    return list.asMap().entries.map((e) {
+      return EventSponsor(
+        id: 'draft_extra_${e.key}',
+        eventId: 'draft',
+        logoUrl: '',
+        logoBytes: e.value.bytes,
+        name: e.value.name,
+        sponsorLabel: e.value.sponsorLabel,
+        websiteUrl: e.value.websiteUrl,
+        isMain: false,
+        displayOrder: e.key,
+      );
+    }).toList();
+  }
+
+  EventSponsor? _mainSponsorForPreview() {
+    final s = _sponsors.where((s) => s.isMain).cast<_SponsorDraft?>().firstWhere(
+          (e) => e?.bytes != null,
+          orElse: () => null,
+        );
+    if (s == null || s.bytes == null) return null;
+    return EventSponsor(
+      id: 'draft_main',
+      eventId: 'draft',
+      logoUrl: '',
+      logoBytes: s.bytes,
+      name: s.name,
+      sponsorLabel: s.sponsorLabel,
+      websiteUrl: s.websiteUrl,
+      isMain: true,
+      displayOrder: 0,
+    );
+  }
+
+  Future<void> _pickCoverImage() async {
+    if (!_hasSport) return;
+
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+
+    final bytes = await picked.readAsBytes();
+    setState(() {
+      _coverImageBytes = bytes;
+      if (!kIsWeb && picked.path.isNotEmpty) {
+        _coverImageFile = File(picked.path);
+      } else {
+        _coverImageFile = null;
+      }
+      // New upload resets transformations
+      _flipHorizontal = false;
+      _coverFilterPreset = 'original';
+    });
+  }
+
+  void _showCoverRequiredSnackBar() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Pirma pasirink renginio vaizdą (įkelk savo nuotrauką)',
+        ),
+        backgroundColor: Colors.redAccent,
+      ),
+    );
+  }
+
+  Future<Uint8List> _coverBytesForUpload() async {
+    if (_coverImageBytes != null) return _coverImageBytes!;
+    if (_coverImageFile != null) return _coverImageFile!.readAsBytes();
+    throw StateError('Nėra pasirinktos nuotraukos');
+  }
+
+  // Sponsor logo picking is handled by `_addSponsorDraft()`.
+
+  Map<String, dynamic> _coverFieldsForInsert(String? imageUrl) => {
+        if (imageUrl != null) 'image_url': imageUrl,
+        'cover_source': 'organizer_upload',
+        'image_flip_horizontal': _flipHorizontal,
+        'cover_filter_preset': _coverFilterPreset,
+      };
 
   Future<String?> _uploadImage(
     String id,
@@ -468,11 +620,28 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       );
       return;
     }
+    if (!_hasName || !_hasSport || !_hasCover) {
+      _showCoverRequiredSnackBar();
+      return;
+    }
 
     setState(() => _isLoading = true);
     final userId = Supabase.instance.client.auth.currentUser?.id;
 
     try {
+      String? mainImgUrl;
+      if (_hasCover) {
+        final bytes = await _coverBytesForUpload();
+        final ext = _coverImageFile?.path.split('.').last.toLowerCase() ?? 'jpg';
+        final safeExt = ['jpg', 'jpeg', 'png', 'webp'].contains(ext) ? ext : 'jpg';
+        mainImgUrl = await _uploadImage(
+          userId ?? 'draft',
+          bytes,
+          safeExt,
+          'event',
+        );
+      }
+
       final isSubmission = widget.requiresApproval;
       final eventResponse = await Supabase.instance.client
           .from('events')
@@ -486,7 +655,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             'start_date': _startDate.toIso8601String(),
             'end_date': _endDate.toIso8601String(),
             'organizer': _organizerCtrl.text.trim(),
-            'sponsor': _sponsorCtrl.text.trim(),
+            'sponsor': null,
             'prizes_info': _prizesInfoCtrl.text.trim(),
             'is_private': _isPrivate,
             'status': isSubmission ? 'pending' : 'open',
@@ -500,42 +669,37 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             'organizer_note': _organizerNoteCtrl.text.trim().isEmpty
                 ? null
                 : _organizerNoteCtrl.text.trim(),
+            ..._coverFieldsForInsert(mainImgUrl),
           })
           .select()
           .single();
 
       final eventId = eventResponse['id'].toString();
 
-      String? mainImgUrl;
-      String? sponsorImgUrl;
-      if (_imageBytes != null) {
-        mainImgUrl = await _uploadImage(
+      // Sponsors
+      for (var i = 0; i < _sponsors.length; i++) {
+        final s = _sponsors[i];
+        final bytes = s.bytes;
+        if (bytes == null) continue;
+        final url = await _uploadImage(
           eventId,
-          _imageBytes!,
-          _imageExtension ?? 'png',
-          'event',
-        );
-        if (mainImgUrl != null) {
-          await Supabase.instance.client
-              .from('events')
-              .update({'image_url': mainImgUrl})
-              .eq('id', eventId);
-        }
-      }
-      if (_sponsorImageBytes != null) {
-        sponsorImgUrl = await _uploadImage(
-          eventId,
-          _sponsorImageBytes!,
-          _sponsorImageExtension ?? 'png',
+          bytes,
+          'png',
           'sponsor',
         );
-        if (sponsorImgUrl != null) {
-          await Supabase.instance.client
-              .from('events')
-              .update({'sponsor_image_url': sponsorImgUrl})
-              .eq('id', eventId);
-        }
+        if (url == null) continue;
+        await EventSponsorService.add(
+          eventId: eventId,
+          logoUrl: url,
+          name: s.name,
+          sponsorLabel: s.sponsorLabel,
+          websiteUrl: s.websiteUrl,
+          isMain: s.isMain,
+          displayOrder: i,
+        );
       }
+
+      // sponsor_image_url legacy no longer used (event_sponsors table)
 
       List<Map<String, dynamic>> tournamentsToInsert = [];
       for (var div in _divisions) {
@@ -562,9 +726,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             div['format_code']?.toString() ?? '1v1',
           ),
           'min_rp': int.tryParse(_minRpCtrl.text) ?? 0,
+          'max_rp': 3000,
           'min_xp': int.tryParse(_minXpCtrl.text) ?? 0,
           'divisions': [div],
-          'image_url': mainImgUrl,
+          ..._coverFieldsForInsert(mainImgUrl),
+          'gender': _genderCodeForDivision(div),
         });
       }
 
@@ -658,16 +824,13 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               ),
               const SizedBox(height: 24),
             ],
-            _buildSectionTitle("RENGINIO VIZUALAS"),
-            _buildImageSection(false, "Įkelti pagrindinę renginio nuotrauką"),
-            const SizedBox(height: 30),
-
             _buildSectionTitle("PAGRINDINĖ INFORMACIJA"),
             _buildTextField(
               _nameCtrl,
               "Renginio pavadinimas (pvz: Pavasario Taurė)",
               icon: LucideIcons.trophy,
               help: QortFormHelpTexts.createEventName,
+              onChanged: (_) => setState(() {}),
             ),
             _buildDropdown(
               "Sporto šaka",
@@ -679,6 +842,17 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               },
               help: QortFormHelpTexts.createSport,
             ),
+            const SizedBox(height: 20),
+            _buildSectionTitle("RENGINIO VIZUALAS"),
+            TournamentComposerPreview(
+              composer: _buildEventCoverSection(),
+              sponsorBand: TournamentSponsorBand(
+                compact: false,
+                mainSponsor: _mainSponsorForPreview(),
+                extraSponsors: _extraSponsorsForPreview(),
+              ),
+            ),
+            const SizedBox(height: 30),
             if (_formatCodesForSport().isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
@@ -693,6 +867,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               "Miestas / Vieta",
               icon: LucideIcons.mapPin,
               help: QortFormHelpTexts.createLocation,
+              onChanged: (_) => setState(() {}),
             ),
             _buildTextField(
               _descriptionCtrl,
@@ -816,12 +991,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 maxLines: 3,
                 help: QortFormHelpTexts.createOrganizerNote,
               ),
-            _buildTextField(
-              _sponsorCtrl,
-              "Pagrindinis Rėmėjas",
-              icon: LucideIcons.briefcase,
-              help: QortFormHelpTexts.createSponsor,
-            ),
+            _buildSponsorsSection(),
 
             const SizedBox(height: 25),
             _buildSectionTitle("DATOS, KAINA IR RP"),
@@ -989,19 +1159,41 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 ),
               ),
             ],
-            const SizedBox(height: 50),
+            const SizedBox(height: 16),
+            Text(
+              _hasCover && _hasName && _hasSport
+                  ? '✓ Galima kurti renginį'
+                  : !_hasName
+                      ? '⚠️ Įvesk renginio pavadinimą'
+                      : !_hasSport
+                          ? '⚠️ Pasirink sporto šaką'
+                          : '⚠️ Pasirink renginio vaizdą',
+              style: TextStyle(
+                color: _canSubmitEvent ? Colors.greenAccent : Colors.redAccent,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
               height: 55,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFD946EF),
+                  disabledBackgroundColor: const Color(0xFF3F3F46),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                   elevation: 5,
                 ),
-                onPressed: _isLoading ? null : _createEventAndTournaments,
+                onPressed: _isLoading
+                    ? null
+                    : (_canSubmitEvent
+                        ? _createEventAndTournaments
+                        : () {
+                            if (!_hasCover) _showCoverRequiredSnackBar();
+                          }),
                 child: _isLoading
                     ? const CircularProgressIndicator(color: Colors.white)
                     : Text(
@@ -1038,48 +1230,266 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     );
   }
 
-  Widget _buildImageSection(bool isSponsor, String title) {
-    final bytes = isSponsor ? _sponsorImageBytes : _imageBytes;
-    return GestureDetector(
-      onTap: () => _pickImage(isSponsor),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            height: isSponsor ? 120 : 180,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: const Color(0xFF18181B),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white10),
-              image: bytes != null
-                  ? DecorationImage(
-                      image: MemoryImage(bytes),
-                      fit: BoxFit.cover,
-                    )
-                  : null,
+  Widget _buildEventCoverSection() {
+    final canPick = _hasSport;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!canPick)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Text(
+              'Pirma pasirink sporto šaką, tada vaizdą',
+              style: TextStyle(color: Colors.orangeAccent, fontSize: 12),
             ),
           ),
-          if (bytes == null)
-            Column(
-              children: [
-                Icon(
-                  isSponsor ? LucideIcons.image : LucideIcons.camera,
-                  color: const Color(0xFFD946EF),
-                  size: isSponsor ? 24 : 36,
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  title,
-                  style: GoogleFonts.oswald(
-                    color: const Color(0xFFD946EF),
-                    fontSize: 14,
+        if (_hasCover)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.flip, size: 20),
+                    tooltip: 'Veidrodis',
+                    onPressed: () => setState(() {
+                      _flipHorizontal = !_flipHorizontal;
+                    }),
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                   ),
+                  const SizedBox(width: 4),
+                  ...TournamentCoverColorFilters.presets.entries.map((e) {
+                    final key = e.key;
+                    final selected = _coverFilterPreset == key;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: ChoiceChip(
+                        label: Text(e.value, style: const TextStyle(fontSize: 11)),
+                        selected: selected,
+                        onSelected: (_) => setState(() {
+                          _coverFilterPreset = key;
+                        }),
+                        selectedColor:
+                            const Color(0xFFD946EF).withValues(alpha: 0.25),
+                        backgroundColor: Colors.black26,
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                        labelStyle: TextStyle(
+                          color: selected ? Colors.white : Colors.white70,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        side: BorderSide(
+                          color:
+                              selected ? const Color(0xFFD946EF) : Colors.white24,
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: TournamentComposerWidget(
+            imageFile: _coverImageFile,
+            imageBytes: _coverImageBytes,
+            eventName: _nameCtrl.text.trim().isEmpty
+                ? 'RENGINIO PAVADINIMAS'
+                : _nameCtrl.text.trim(),
+            sport: _selectedSport,
+            location: _locationCtrl.text.trim().isEmpty
+                ? null
+                : _locationCtrl.text.trim(),
+            startDate: _startDate,
+            endDate: _endDate,
+            price: _entryPrice,
+            description: _descriptionCtrl.text.trim().isEmpty
+                ? 'Pridėk renginio aprašymą - jis bus matomas ant kortelės'
+                : _descriptionCtrl.text.trim(),
+            organizerName: _organizerCtrl.text.trim().isEmpty
+                ? null
+                : _organizerCtrl.text.trim(),
+            levels: _levelsForPreview(),
+            flipHorizontal: _flipHorizontal,
+            colorFilterPreset: _coverFilterPreset,
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: canPick ? _pickCoverImage : null,
+            icon: const Icon(LucideIcons.camera, size: 18),
+            label: Text(
+              _hasCover ? 'Keisti nuotrauką' : 'Įkelti nuotrauką',
+              style: GoogleFonts.bebasNeue(fontSize: 16, letterSpacing: 1),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFD946EF),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSponsorsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildSectionTitle("RĖMĖJAI"),
+        if (_sponsors.isEmpty)
+          const Text(
+            'Rėmėjai neprivalomi. Pridėk logotipą jei reikia.',
+            style: TextStyle(color: QortColors.textSecondary, fontSize: 12),
+          ),
+        const SizedBox(height: 10),
+        ..._sponsors.asMap().entries.map((e) {
+          final idx = e.key;
+          final s = e.value;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF18181B),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 50,
+                      height: 50,
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.95),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: s.bytes == null
+                          ? const Icon(LucideIcons.image, size: 18)
+                          : Image.memory(s.bytes!, fit: BoxFit.contain),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TextField(
+                            onChanged: (v) => setState(() {
+                              _sponsors[idx] = s.copyWith(name: v);
+                            }),
+                            style: const TextStyle(color: Colors.white),
+                            decoration: const InputDecoration(
+                              hintText: 'Pavadinimas (optional)',
+                              hintStyle: TextStyle(color: Colors.white38),
+                              isDense: true,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Autocomplete<String>(
+                            optionsBuilder: (value) {
+                              final q = value.text.trim().toLowerCase();
+                              if (q.isEmpty) return const Iterable<String>.empty();
+                              return _sponsorLabelSuggestions.where(
+                                (o) => o.toLowerCase().contains(q),
+                              );
+                            },
+                            onSelected: (v) => setState(() {
+                              _sponsors[idx] = s.copyWith(sponsorLabel: v);
+                            }),
+                            fieldViewBuilder: (context, ctrl, focus, onSubmit) {
+                              final current = s.sponsorLabel ?? '';
+                              if (ctrl.text != current) {
+                                ctrl.text = current;
+                                ctrl.selection = TextSelection.fromPosition(
+                                  TextPosition(offset: ctrl.text.length),
+                                );
+                              }
+                              return TextField(
+                                controller: ctrl,
+                                focusNode: focus,
+                                onChanged: (v) => setState(() {
+                                  _sponsors[idx] = s.copyWith(sponsorLabel: v);
+                                }),
+                                style: const TextStyle(color: Colors.white),
+                                decoration: const InputDecoration(
+                                  hintText: 'Tipas (pvz. Generalinis rėmėjas)',
+                                  hintStyle: TextStyle(color: Colors.white38),
+                                  isDense: true,
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            onChanged: (v) => setState(() {
+                              _sponsors[idx] = s.copyWith(websiteUrl: v);
+                            }),
+                            style: const TextStyle(color: Colors.white),
+                            decoration: const InputDecoration(
+                              hintText: 'Website (optional)',
+                              hintStyle: TextStyle(color: Colors.white38),
+                              isDense: true,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => setState(() => _sponsors.removeAt(idx)),
+                      icon: const Icon(LucideIcons.trash2, color: Colors.redAccent),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Text(
+                      'Pagrindinis',
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                    const Spacer(),
+                    Switch(
+                      value: s.isMain,
+                      activeColor: const Color(0xFFD946EF),
+                      onChanged: (v) => _toggleMainSponsor(idx, v),
+                    ),
+                  ],
                 ),
               ],
             ),
-        ],
-      ),
+          );
+        }),
+        OutlinedButton.icon(
+          onPressed: _addSponsorDraft,
+          icon: const Icon(LucideIcons.plus, color: Color(0xFFD946EF), size: 18),
+          label: const Text(
+            '+ Pridėti rėmėją',
+            style: TextStyle(
+              color: Color(0xFFD946EF),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            side: BorderSide(color: const Color(0xFFD946EF).withOpacity(0.5)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1090,6 +1500,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     IconData? icon,
     int maxLines = 1,
     String? help,
+    ValueChanged<String>? onChanged,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 15),
@@ -1111,6 +1522,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             ),
           TextField(
             controller: ctrl,
+            onChanged: onChanged,
             keyboardType: isNumber ? TextInputType.number : TextInputType.text,
             maxLines: maxLines,
             style: const TextStyle(color: QortColors.textPrimary, fontSize: 16),
@@ -1260,6 +1672,38 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _SponsorDraft {
+  final Uint8List? bytes;
+  final String? name;
+  final String? sponsorLabel;
+  final String? websiteUrl;
+  final bool isMain;
+
+  const _SponsorDraft({
+    this.bytes,
+    this.name,
+    this.sponsorLabel,
+    this.websiteUrl,
+    this.isMain = false,
+  });
+
+  _SponsorDraft copyWith({
+    Uint8List? bytes,
+    String? name,
+    String? sponsorLabel,
+    String? websiteUrl,
+    bool? isMain,
+  }) {
+    return _SponsorDraft(
+      bytes: bytes ?? this.bytes,
+      name: name ?? this.name,
+      sponsorLabel: sponsorLabel ?? this.sponsorLabel,
+      websiteUrl: websiteUrl ?? this.websiteUrl,
+      isMain: isMain ?? this.isMain,
     );
   }
 }

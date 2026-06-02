@@ -103,25 +103,57 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
-  // Ištrinimo funkcija
-  Future<void> _deleteTournament(String id) async {
-    try {
-      await Supabase.instance.client.from('tournaments').delete().eq('id', id);
-      _loadTournaments(); // Atnaujiname sąrašą
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Turnyras ištrintas"),
-            backgroundColor: Colors.red,
+  Future<void> _deleteTournament(Map<String, dynamic> t) async {
+    final eventId = t['event_id']?.toString();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Ištrinti turnyrą?'),
+        content: const Text(
+          'Bus ištrintas turnyras kartu su visais divizionais '
+          '(LIGHT, MIDDLE, HARD jei yra) ir jų dalyviais. '
+          'Šio veiksmo nebus galima atšaukti.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Atšaukti'),
           ),
-        );
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Ištrinti'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      final client = Supabase.instance.client;
+      if (eventId != null && eventId.isNotEmpty) {
+        // Event-level delete (CASCADE should remove divisions/tournaments).
+        await client.from('events').delete().eq('id', eventId);
+      } else {
+        // Fallback: legacy tournament delete.
+        await client.from('tournaments').delete().eq('id', t['id']);
       }
+
+      await _loadTournaments();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Turnyras ištrintas'),
+          backgroundColor: Colors.red,
+        ),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Klaida trinant: $e")));
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Klaida trinant: $e')),
+      );
     }
   }
 
@@ -323,7 +355,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                   color: Colors.red,
                                   size: 20,
                                 ),
-                                onPressed: () => _deleteTournament(t['id']),
+                                onPressed: () => _deleteTournament(
+                                  Map<String, dynamic>.from(t as Map),
+                                ),
                               ),
                             ],
                           ),

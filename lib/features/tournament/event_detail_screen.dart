@@ -7,6 +7,10 @@ import 'package:intl/intl.dart';
 
 // IMPORTUOJAME TAVO ORIGINALŲ TURNYRO VIDŲ
 import 'tournament_detail_screen.dart';
+import '../../core/widgets/stock_image_attribution.dart';
+import '../admin/tournament_composer_widget.dart';
+import '../../core/services/event_sponsor_service.dart';
+import '../admin/tournament_sponsor_band.dart';
 
 class EventDetailScreen extends StatefulWidget {
   final Map<String, dynamic> event;
@@ -20,26 +24,84 @@ class EventDetailScreen extends StatefulWidget {
 class _EventDetailScreenState extends State<EventDetailScreen> {
   bool _isLoading = true;
   List<dynamic> _divisions = []; // Čia bus tavo "Light, Middle, Hard"
+  Map<String, dynamic>? _event;
+  List<EventSponsor> _eventSponsors = [];
 
   @override
   void initState() {
     super.initState();
-    _loadDivisions();
+    _loadEvent();
   }
 
-  Future<void> _loadDivisions() async {
+  DateTime? _parseDate(dynamic raw) {
+    if (raw == null) return null;
+    try {
+      return DateTime.parse(raw.toString());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  double? _getEventEntryPrice() {
+    // event-level poster: use first tournament's entry_fee if present
+    final list = _divisions;
+    if (list.isEmpty) return null;
+    final first = list.first;
+    if (first is Map && first['entry_fee'] != null) {
+      return (first['entry_fee'] as num).toDouble();
+    }
+    return null;
+  }
+
+  List<TournamentLevelInfo> _levelsForPreview() {
+    final e = _event ?? widget.event;
+    final evName = e['name']?.toString() ?? '';
+    return _divisions.whereType<Map>().map((t) {
+      final tName = t['name']?.toString() ?? '';
+      final level = TournamentLevelInfo.stripEventPrefix(
+        tournamentName: tName,
+        eventName: evName,
+      );
+      return TournamentLevelInfo(
+        levelName: level,
+        formatCode: t['format_code']?.toString() ?? '1v1',
+        gender: t['gender']?.toString(),
+        minRp: (t['min_rp'] as num?)?.toInt() ?? 0,
+        maxRp: (t['max_rp'] as num?)?.toInt() ?? 3000,
+      );
+    }).toList();
+  }
+
+  (EventSponsor?, List<EventSponsor>) _sponsorsForPreview() {
+    final mainList = _eventSponsors.where((s) => s.isMain).toList();
+    final EventSponsor? main = mainList.isNotEmpty ? mainList.first : null;
+    final extras = _eventSponsors.where((s) => !s.isMain).toList();
+    return (main, extras);
+  }
+
+  Future<void> _loadEvent() async {
     setState(() => _isLoading = true);
     try {
-      // Traukiame visus TURNYRUS, kurie priklauso šiam RENGINIUI
-      final response = await Supabase.instance.client
-          .from('tournaments')
-          .select()
-          .eq('event_id', widget.event['id'])
-          .order('created_at', ascending: false);
+      final client = Supabase.instance.client;
+      final eventId = widget.event['id'];
+      final fresh = await client
+          .from('events')
+          .select('*, tournaments(*), event_sponsors(*)')
+          .eq('id', eventId)
+          .single();
+
+      final tournaments = (fresh['tournaments'] as List?) ?? const [];
+      final sponsorsRaw = (fresh['event_sponsors'] as List?) ?? const [];
+      final sponsors = sponsorsRaw
+          .whereType<Map>()
+          .map((j) => EventSponsor.fromJson(Map<String, dynamic>.from(j)))
+          .toList();
 
       if (mounted) {
         setState(() {
-          _divisions = response;
+          _event = Map<String, dynamic>.from(fresh as Map);
+          _divisions = tournaments;
+          _eventSponsors = sponsors;
           _isLoading = false;
         });
       }
@@ -51,7 +113,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final e = widget.event;
+    final e = _event ?? widget.event;
     String startDate = e['start_date'] != null
         ? DateFormat('yyyy-MM-dd').format(DateTime.parse(e['start_date']))
         : '';
@@ -70,34 +132,35 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             backgroundColor: QortColors.surface,
             iconTheme: const IconThemeData(color: QortColors.textPrimary),
             flexibleSpace: FlexibleSpaceBar(
-              background: e['image_url'] != null
-                  ? Image.network(e['image_url'], fit: BoxFit.cover)
-                  : Container(
-                      color: QortColors.border,
-                      child: const Icon(
-                        LucideIcons.image,
-                        size: 50,
-                        color: QortColors.navInactive,
-                      ),
-                    ),
-              title: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.6),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  e['name'] ?? "Renginys",
-                  style: GoogleFonts.bebasNeue(
-                    color: QortColors.textPrimary,
-                    fontSize: 20,
-                  ),
+              background: ClipRect(
+                child: TournamentComposerWidget(
+                  imageUrl: e['image_url']?.toString(),
+                  eventName: e['name']?.toString() ?? '',
+                  sport: e['sport']?.toString() ?? '',
+                  location: e['location']?.toString(),
+                  description: e['description']?.toString(),
+                  organizerName: e['organizer']?.toString(),
+                  startDate: _parseDate(e['start_date']),
+                  endDate: _parseDate(e['end_date']),
+                  levels: _levelsForPreview(),
+                  price: _getEventEntryPrice(),
+                  flipHorizontal: e['image_flip_horizontal'] == true,
+                  colorFilterPreset: e['cover_filter_preset']?.toString(),
                 ),
               ),
             ),
+          ),
+
+          SliverToBoxAdapter(
+            child: TournamentSponsorBand(
+              compact: false,
+              mainSponsor: _sponsorsForPreview().$1,
+              extraSponsors: _sponsorsForPreview().$2,
+            ),
+          ),
+
+          SliverToBoxAdapter(
+            child: StockImageAttribution(data: e),
           ),
 
           // INFORMACIJA IR LYGIŲ PASIRINKIMAS
