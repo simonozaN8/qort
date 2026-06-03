@@ -22,6 +22,20 @@ export PATH="$PATH:$(pwd)/flutter/bin"
 echo "=== Flutter versija ==="
 flutter --version
 
+# Sukurti .env failą iš Vercel Environment Variables
+echo "=== Generating .env from Vercel env vars ==="
+cat > .env << EOF
+GEMINI_API_KEY=${GEMINI_API_KEY:-}
+EOF
+
+# Patikrinti ar GEMINI_API_KEY pateiktas (nesvarbu jei tuščias -
+# AI super-admin feature neveiks, bet build'as sėkmingas)
+if [ -z "$GEMINI_API_KEY" ]; then
+  echo "⚠️  WARNING: GEMINI_API_KEY nepateiktas - AI generavimas neveiks"
+else
+  echo "✓ GEMINI_API_KEY pateiktas (${#GEMINI_API_KEY} simbolių)"
+fi
+
 flutter config --enable-web
 
 echo "=== Pub get ==="
