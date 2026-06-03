@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/qort_colors.dart';
+import '../../core/theme/qort_mode_colors.dart';
 import '../../core/theme/qort_palette_extension.dart';
 import '../../core/widgets/qort_form_help.dart';
 import 'package:flutter/services.dart';
@@ -223,7 +224,7 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
                   "Tavo lygis profilyje: ${SportLevels.nameFor(_sportCatalogEntry, _myLevelInThisSport)}",
                   textAlign: TextAlign.center,
                   style: const TextStyle(
-                    color: Colors.blueAccent,
+                    color: QortModeColors.competition,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -255,7 +256,7 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: isLevelValid
-                            ? const Color(0xFFD946EF)
+                            ? QortModeColors.competition
                             : Colors.red.withOpacity(0.3),
                       ),
                     ),
@@ -314,7 +315,7 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: isLevelValid
-                                  ? const Color(0xFFD946EF)
+                                  ? QortModeColors.competition
                                   : Colors.grey[800],
                               foregroundColor: isLevelValid
                                   ? Colors.white
@@ -445,7 +446,7 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
                         ),
                         trailing: const Icon(
                           LucideIcons.chevronRight,
-                          color: Color(0xFFD946EF),
+                          color: QortModeColors.competition,
                         ),
                         onTap: () {
                           Navigator.pop(ctx);
@@ -675,7 +676,7 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
                   const QortHelpBanner(
                     title: 'Rezultato įvedimas',
                     bullets: QortFormHelpTexts.scoreEntry,
-                    accentColor: Color(0xFFD946EF),
+                    accentColor: QortModeColors.competition,
                   ),
                   Row(
                     children: [
@@ -776,7 +777,7 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
                 style: ElevatedButton.styleFrom(
                   backgroundColor: isAdminOverride
                       ? Colors.red
-                      : const Color(0xFFD946EF),
+                      : QortModeColors.competition,
                 ),
                 onPressed: () {
                   int p1SetsWon = 0;
@@ -978,7 +979,11 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
               end: Alignment.bottomRight,
               colors: [
                 palette.surfaceElevated,
-                Color.lerp(palette.surface, palette.primary, 0.1)!,
+                Color.lerp(
+                  palette.surface,
+                  QortModeColors.competition,
+                  0.1,
+                )!,
                 palette.background,
               ],
             ),
@@ -1006,7 +1011,7 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
         ],
         bottom: TabBar(
           controller: _tabController,
-          indicatorColor: palette.primary,
+          indicatorColor: QortModeColors.competition,
           labelColor: palette.textPrimary,
           unselectedLabelColor: palette.textSecondary,
           isScrollable: true,
@@ -1059,7 +1064,7 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
                       )
                     : ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFD946EF),
+                          backgroundColor: QortModeColors.competition,
                           minimumSize: const Size(double.infinity, 50),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -1080,7 +1085,7 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
       ),
       body: _isLoading
           ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFFD946EF)),
+              child: CircularProgressIndicator(color: QortModeColors.competition),
             )
           : TabBarView(
               physics: const NeverScrollableScrollPhysics(),
@@ -1324,7 +1329,7 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
                         Text(
                           "${t['sponsor']}",
                           style: const TextStyle(
-                            color: Color(0xFFD946EF),
+                            color: QortModeColors.competition,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -1364,7 +1369,7 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
               int idx = entry.key;
               Map<String, dynamic> stage = entry.value;
 
-              Color accentColor = const Color(0xFFD946EF);
+              Color accentColor = QortModeColors.competition;
               if (stage['format'].toString().contains('Atkrintamosios') ||
                   stage['format'].toString().contains('Elimination')) {
                 accentColor = Colors.orangeAccent;
@@ -1541,7 +1546,7 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
   Widget _infoRow(IconData icon, String label, String value) {
     return Row(
       children: [
-        Icon(icon, color: const Color(0xFFD946EF), size: 20),
+        Icon(icon, color: QortModeColors.competition, size: 20),
         const SizedBox(width: 15),
         Text(label, style: const TextStyle(color: QortColors.textSecondary, fontSize: 14)),
         const Spacer(),
@@ -1581,14 +1586,14 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFD946EF).withOpacity(0.2),
+                    color: QortModeColors.competition.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFD946EF)),
+                    border: Border.all(color: QortModeColors.competition),
                   ),
                   child: Text(
                     division,
                     style: const TextStyle(
-                      color: Color(0xFFD946EF),
+                      color: QortModeColors.competition,
                       fontSize: 12,
                     ),
                   ),

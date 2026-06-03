@@ -80,6 +80,9 @@ class _AdminTournamentControlScreenState
     "Kitas (įrašyti savo...)",
   ];
   final TextEditingController _customVenueCtrl = TextEditingController();
+  final TextEditingController _organizerCtrl = TextEditingController();
+  final TextEditingController _organizerEmailCtrl = TextEditingController();
+  final TextEditingController _organizerPhoneCtrl = TextEditingController();
 
   final List<String> _schedulingOptions = [
     "Tik Žaidėjai (Patys tariasi)",
@@ -818,6 +821,18 @@ class _AdminTournamentControlScreenState
       if (eventId != null && eventId.isNotEmpty) {
         try {
           sponsors = await EventSponsorService.listByEvent(eventId);
+        } catch (_) {}
+        try {
+          final ev = await client
+              .from('events')
+              .select('organizer, organizer_email, organizer_phone')
+              .eq('id', eventId)
+              .maybeSingle();
+          if (ev != null) {
+            _organizerCtrl.text = ev['organizer']?.toString() ?? '';
+            _organizerEmailCtrl.text = ev['organizer_email']?.toString() ?? '';
+            _organizerPhoneCtrl.text = ev['organizer_phone']?.toString() ?? '';
+          }
         } catch (_) {}
       }
 
@@ -2746,6 +2761,121 @@ class _AdminTournamentControlScreenState
     );
   }
 
+  Future<void> _saveEventOrganizer() async {
+    final eventId = widget.tournament['event_id']?.toString();
+    if (eventId == null || eventId.isEmpty) {
+      _showError('Renginys nerastas (event_id)');
+      return;
+    }
+    setState(() => _isLoading = true);
+    try {
+      await Supabase.instance.client.from('events').update({
+        'organizer': _organizerCtrl.text.trim(),
+        'organizer_email': _organizerEmailCtrl.text.trim().isEmpty
+            ? null
+            : _organizerEmailCtrl.text.trim(),
+        'organizer_phone': _organizerPhoneCtrl.text.trim().isEmpty
+            ? null
+            : _organizerPhoneCtrl.text.trim(),
+      }).eq('id', eventId);
+      _showSuccess('Organizatoriaus duomenys išsaugoti');
+    } catch (e) {
+      _showError('Klaida: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Widget _buildOrganizerEventSection() {
+    final eventId = widget.tournament['event_id']?.toString();
+    if (eventId == null || eventId.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    InputDecoration fieldDeco(String label, {String? hint, IconData? icon}) {
+      return InputDecoration(
+        labelText: label,
+        hintText: hint,
+        prefixIcon: icon != null ? Icon(icon, size: 16) : null,
+        filled: true,
+        fillColor: const Color(0xFF202025),
+        labelStyle: const TextStyle(color: Colors.white70),
+        hintStyle: const TextStyle(color: Colors.white38),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide.none,
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: QortColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: QortColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'ORGANIZATORIUS',
+            style: GoogleFonts.oswald(
+              color: const Color(0xFFEAB308),
+              fontSize: 14,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _organizerCtrl,
+            style: const TextStyle(color: QortColors.textPrimary),
+            decoration: fieldDeco('Organizatorius', icon: LucideIcons.user),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _organizerEmailCtrl,
+            keyboardType: TextInputType.emailAddress,
+            style: const TextStyle(color: QortColors.textPrimary),
+            decoration: fieldDeco(
+              'El. paštas (neprivaloma)',
+              hint: 'info@klubas.lt',
+              icon: LucideIcons.mail,
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _organizerPhoneCtrl,
+            keyboardType: TextInputType.phone,
+            style: const TextStyle(color: QortColors.textPrimary),
+            decoration: fieldDeco(
+              'Telefonas (neprivaloma)',
+              hint: '+370 600 12345',
+              icon: LucideIcons.phone,
+            ),
+          ),
+          const SizedBox(height: 15),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFD946EF),
+              ),
+              onPressed: _isLoading ? null : _saveEventOrganizer,
+              child: const Text(
+                'IŠSAUGOTI ORGANIZATORIŲ',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBendraInfo() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2788,6 +2918,10 @@ class _AdminTournamentControlScreenState
         const SizedBox(height: 30),
 
         _buildTournamentCoverSection(),
+
+        const SizedBox(height: 30),
+
+        _buildOrganizerEventSection(),
 
         const SizedBox(height: 30),
 

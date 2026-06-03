@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/qort_colors.dart';
+import '../../core/theme/qort_mode_colors.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -188,7 +189,7 @@ class _TournamentChatTabState extends State<TournamentChatTab> {
         Expanded(
           child: _isLoading
               ? const Center(
-                  child: CircularProgressIndicator(color: Color(0xFFD946EF)),
+                  child: CircularProgressIndicator(color: QortModeColors.competition),
                 )
               : _messages.isEmpty
               ? Center(
@@ -346,7 +347,7 @@ class _TournamentChatTabState extends State<TournamentChatTab> {
             ),
             const SizedBox(width: 10),
             CircleAvatar(
-              backgroundColor: const Color(0xFFD946EF),
+              backgroundColor: QortModeColors.competition,
               child: IconButton(
                 icon: const Icon(
                   LucideIcons.send,
@@ -415,7 +416,7 @@ class _TournamentChatTabState extends State<TournamentChatTab> {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
         decoration: BoxDecoration(
-          color: isMe ? const Color(0xFFD946EF) : QortColors.background,
+          color: isMe ? QortModeColors.competition : QortColors.background,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(16),
             topRight: const Radius.circular(16),

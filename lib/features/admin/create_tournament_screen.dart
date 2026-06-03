@@ -50,6 +50,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   final _priceCtrl = TextEditingController(text: "20");
   final _rpValueCtrl = TextEditingController(text: "1000");
   final _organizerCtrl = TextEditingController();
+  final _organizerEmailCtrl = TextEditingController();
+  final _organizerPhoneCtrl = TextEditingController();
   final _organizerNoteCtrl = TextEditingController();
   bool _acceptedOrganizerTerms = false;
 
@@ -166,6 +168,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     _priceCtrl.dispose();
     _rpValueCtrl.dispose();
     _organizerCtrl.dispose();
+    _organizerEmailCtrl.dispose();
+    _organizerPhoneCtrl.dispose();
     _organizerNoteCtrl.dispose();
     _minAgeCtrl.dispose();
     _maxAgeCtrl.dispose();
@@ -655,6 +659,12 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             'start_date': _startDate.toIso8601String(),
             'end_date': _endDate.toIso8601String(),
             'organizer': _organizerCtrl.text.trim(),
+            'organizer_email': _organizerEmailCtrl.text.trim().isEmpty
+                ? null
+                : _organizerEmailCtrl.text.trim(),
+            'organizer_phone': _organizerPhoneCtrl.text.trim().isEmpty
+                ? null
+                : _organizerPhoneCtrl.text.trim(),
             'sponsor': null,
             'prizes_info': _prizesInfoCtrl.text.trim(),
             'is_private': _isPrivate,
@@ -982,6 +992,44 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               "Organizatorius",
               icon: LucideIcons.building,
               help: QortFormHelpTexts.createOrganizer,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _organizerEmailCtrl,
+              keyboardType: TextInputType.emailAddress,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'El. paštas (neprivaloma)',
+                hintText: 'info@klubas.lt',
+                prefixIcon: const Icon(LucideIcons.mail, size: 16),
+                labelStyle: const TextStyle(color: Colors.white70),
+                hintStyle: const TextStyle(color: Colors.white38),
+                filled: true,
+                fillColor: const Color(0xFF202025),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _organizerPhoneCtrl,
+              keyboardType: TextInputType.phone,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'Telefonas (neprivaloma)',
+                hintText: '+370 600 12345',
+                prefixIcon: const Icon(LucideIcons.phone, size: 16),
+                labelStyle: const TextStyle(color: Colors.white70),
+                hintStyle: const TextStyle(color: Colors.white38),
+                filled: true,
+                fillColor: const Color(0xFF202025),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+              ),
             ),
             if (widget.requiresApproval)
               _buildTextField(

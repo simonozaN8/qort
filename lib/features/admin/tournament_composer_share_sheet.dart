@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -9,13 +10,14 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:universal_html/html.dart' as html;
 
 import '../../core/constants/tournament_links.dart';
 import '../../core/services/event_sponsor_service.dart';
 import 'tournament_composer_widget.dart';
 import 'tournament_sponsor_band.dart';
 
-/// Dalinimasis: PNG eksportas (16:9 + QR) ir nuoroda.
+/// Dalinimasis: PNG eksportas ir nuoroda (be QR).
 Future<void> showTournamentComposerShareSheet({
   required BuildContext context,
   required String tournamentId,
@@ -56,10 +58,25 @@ class _TournamentComposerShareSheetState
   List<dynamic> _tournaments = [];
   List<EventSponsor> _eventSponsors = [];
   bool _loadingEvent = true;
+  String? _feedbackMessage;
+  bool _feedbackIsError = false;
 
   String get _eventId => _event?['id']?.toString() ?? '';
   String get _shareUrl =>
       _eventId.isEmpty ? '' : TournamentLinks.eventUrl(_eventId);
+
+  bool get _isIOSPWA {
+    if (!kIsWeb) return false;
+    try {
+      final ua = html.window.navigator.userAgent.toLowerCase();
+      final isIOS = ua.contains('iphone') || ua.contains('ipad');
+      final isStandalone =
+          html.window.matchMedia('(display-mode: standalone)').matches;
+      return isIOS && isStandalone;
+    } catch (_) {
+      return false;
+    }
+  }
 
   @override
   void initState() {
@@ -70,7 +87,49 @@ class _TournamentComposerShareSheetState
     });
   }
 
-  TournamentComposerWidget get _composerWithQr {
+  void _showFeedback(String message, {bool isError = false}) {
+    if (!mounted) return;
+    setState(() {
+      _feedbackMessage = message;
+      _feedbackIsError = isError;
+    });
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() => _feedbackMessage = null);
+      }
+    });
+  }
+
+  Widget? _buildFeedbackBanner() {
+    if (_feedbackMessage == null) return null;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: _feedbackIsError ? Colors.red.shade900 : Colors.green.shade800,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _feedbackIsError ? Icons.error : Icons.check_circle,
+            color: Colors.white,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _feedbackMessage!,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  TournamentComposerWidget get _composerForShare {
     final eventName = _event?['name']?.toString();
     final eventSport = _event?['sport']?.toString();
     final eventLocation = _event?['location']?.toString();
@@ -124,8 +183,8 @@ class _TournamentComposerShareSheetState
       organizerName: eventOrg ?? widget.composer.organizerName,
       levels: levels.isNotEmpty ? levels : widget.composer.levels,
       mainSponsor: mainSponsor ?? widget.composer.mainSponsor,
-      extraSponsors: _eventSponsors.isNotEmpty ? extraSponsors : widget.composer.extraSponsors,
-      qrUrl: _shareUrl,
+      extraSponsors:
+          _eventSponsors.isNotEmpty ? extraSponsors : widget.composer.extraSponsors,
       flipHorizontal: widget.composer.flipHorizontal,
       colorFilterPreset: widget.composer.colorFilterPreset,
     );
@@ -175,7 +234,11 @@ class _TournamentComposerShareSheetState
   }
 
   Future<void> _capturePng() async {
-    if (_loadingEvent) return;
+    if (_loadingEvent) {
+      await _loadEvent();
+    }
+    if (!mounted) return;
+
     setState(() {
       _exporting = true;
       _error = null;
@@ -198,12 +261,15 @@ class _TournamentComposerShareSheetState
         _pngBytes = byteData.buffer.asUint8List();
         _exporting = false;
       });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _exporting = false;
-        _error = e.toString();
-      });
+    } catch (e, st) {
+      debugPrint('Capture klaida: $e\n$st');
+      if (mounted) {
+        setState(() {
+          _exporting = false;
+          _error = 'Klaida: $e';
+        });
+        _showFeedback('Nepavyko paruošti PNG: $e', isError: true);
+      }
     }
   }
 
@@ -218,37 +284,215 @@ class _TournamentComposerShareSheetState
   }
 
   Future<void> _downloadPng() async {
-    if (_pngBytes == null) return;
-    final file = await _writePngToTemp();
-    if (file == null || !mounted) return;
-    await Share.shareXFiles(
-      [XFile(file.path, mimeType: 'image/png')],
-      text: 'QORT turnyro plakatas',
+    try {
+      if (_pngBytes == null) {
+        await _capturePng();
+      }
+      if (_pngBytes == null) {
+        _showFeedback('Nepavyko paruošti vaizdo', isError: true);
+        return;
+      }
+
+      if (kIsWeb) {
+        final blob = html.Blob([_pngBytes!], 'image/png');
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        html.AnchorElement(href: url)
+          ..setAttribute(
+            'download',
+            'qort_${_eventId.isNotEmpty ? _eventId : widget.tournamentId}.png',
+          )
+          ..click();
+        html.Url.revokeObjectUrl(url);
+        _showFeedback('PNG atsisiųstas');
+      } else {
+        final file = await _writePngToTemp();
+        if (file == null) {
+          _showFeedback('Nepavyko sukurti failo', isError: true);
+          return;
+        }
+        final shareText = _shareUrl.isEmpty
+            ? 'QORT turnyro plakatas'
+            : 'Pažiūrėk šį turnyrą: $_shareUrl';
+        final result = await Share.shareXFiles(
+          [XFile(file.path, mimeType: 'image/png')],
+          text: shareText,
+        );
+        if (result.status == ShareResultStatus.success) {
+          _showFeedback('Pasidalinta');
+        }
+      }
+    } catch (e, st) {
+      debugPrint('Download klaida: $e\n$st');
+      _showFeedback('Klaida atsisiunčiant: $e', isError: true);
+    }
+  }
+
+  void _showCopyDialog(String text) {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      useRootNavigator: true,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text(
+          'Nukopijuok nuorodą rankiniu būdu',
+          style: TextStyle(color: Colors.white, fontSize: 16),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _isIOSPWA
+                  ? 'iOS programėlėje kopijavimas ribotas. Pažymėk tekstą žemiau:'
+                  : 'Pažymėk nuorodą žemiau ir nukopijuok:',
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: SelectableText(
+                text,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Uždaryti'),
+          ),
+        ],
+      ),
     );
   }
 
   Future<void> _copyLink() async {
-    if (_shareUrl.isEmpty) return;
-    await Clipboard.setData(ClipboardData(text: _shareUrl));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Nuoroda nukopijuota')),
-    );
+    if (_shareUrl.isEmpty) {
+      _showFeedback('Renginys dar kraunamas, palauk...');
+      return;
+    }
+
+    try {
+      await Clipboard.setData(ClipboardData(text: _shareUrl));
+      _showFeedback('Nuoroda nukopijuota');
+      return;
+    } catch (e) {
+      debugPrint('Flutter Clipboard fail: $e');
+    }
+
+    if (kIsWeb) {
+      try {
+        final textarea = html.TextAreaElement()
+          ..value = _shareUrl
+          ..style.position = 'fixed'
+          ..style.left = '-9999px';
+        html.document.body?.append(textarea);
+        textarea.select();
+        final success = html.document.execCommand('copy');
+        textarea.remove();
+
+        if (success) {
+          _showFeedback('Nuoroda nukopijuota');
+          return;
+        }
+      } catch (e) {
+        debugPrint('execCommand fail: $e');
+      }
+    }
+
+    try {
+      final result = await Share.share(
+        _shareUrl,
+        subject: 'QORT turnyras',
+      );
+      debugPrint('Share result: ${result.status}, ${result.raw}');
+      if (result.status == ShareResultStatus.success) {
+        _showFeedback('Pasidalinta');
+      }
+      return;
+    } catch (e) {
+      debugPrint('share_plus fail: $e');
+    }
+
+    _showCopyDialog(_shareUrl);
   }
 
   Future<void> _sharePng() async {
-    if (_pngBytes == null) return;
-    final file = await _writePngToTemp();
-    if (file == null) return;
-    await Share.shareXFiles(
-      [XFile(file.path, mimeType: 'image/png')],
-      text:
-          'QORT: ${_event?['name']?.toString() ?? widget.composer.eventName}\n$_shareUrl',
-    );
+    try {
+      if (_pngBytes == null) {
+        await _capturePng();
+      }
+      if (_pngBytes == null) {
+        _showFeedback('Nepavyko paruošti vaizdo', isError: true);
+        return;
+      }
+
+      final shareText = _shareUrl.isEmpty
+          ? 'QORT turnyro plakatas'
+          : 'Pažiūrėk šį turnyrą: $_shareUrl';
+
+      try {
+        if (kIsWeb) {
+          final result = await Share.share(
+            shareText,
+            subject: 'QORT turnyras',
+          );
+
+          debugPrint('Share result: ${result.status}, ${result.raw}');
+
+          if (result.status == ShareResultStatus.success) {
+            _showFeedback('Pasidalinta');
+          } else if (result.status == ShareResultStatus.dismissed) {
+            // Vartotojas atšaukė — tylėti
+          } else {
+            _showFeedback('Share nepalaikomas — naudok dialogą žemiau');
+            _showCopyDialog(shareText);
+          }
+          return;
+        } else {
+          final file = await _writePngToTemp();
+          if (file == null) {
+            _showFeedback('Nepavyko sukurti failo', isError: true);
+            return;
+          }
+
+          final result = await Share.shareXFiles(
+            [XFile(file.path, mimeType: 'image/png')],
+            text: shareText,
+            subject: 'QORT turnyras',
+          );
+
+          if (result.status == ShareResultStatus.success) {
+            _showFeedback('Pasidalinta');
+          }
+          return;
+        }
+      } catch (e) {
+        debugPrint('share_plus klaida: $e');
+      }
+
+      _showCopyDialog(shareText);
+    } catch (e, st) {
+      debugPrint('Share klaida: $e\n$st');
+      _showFeedback('Klaida: $e', isError: true);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final feedbackBanner = _buildFeedbackBanner();
+
     return Container(
       margin: const EdgeInsets.only(top: 40),
       decoration: const BoxDecoration(
@@ -275,14 +519,16 @@ class _TournamentComposerShareSheetState
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _composerWithQr,
+                  _composerForShare,
                   TournamentSponsorBand(
                     compact: false,
                     mainSponsor: (() {
-                      final main = _eventSponsors.where((s) => s.isMain).toList();
+                      final main =
+                          _eventSponsors.where((s) => s.isMain).toList();
                       return main.isNotEmpty ? main.first : null;
                     })(),
-                    extraSponsors: _eventSponsors.where((s) => !s.isMain).toList(),
+                    extraSponsors:
+                        _eventSponsors.where((s) => !s.isMain).toList(),
                   ),
                 ],
               ),
@@ -300,7 +546,10 @@ class _TournamentComposerShareSheetState
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: Colors.redAccent),
+                ),
               ),
             if (_pngBytes != null && !_exporting) ...[
               const SizedBox(height: 8),
@@ -315,8 +564,9 @@ class _TournamentComposerShareSheetState
               style: const TextStyle(color: Colors.white54, fontSize: 11),
             ),
             const SizedBox(height: 16),
+            if (feedbackBanner != null) feedbackBanner,
             ElevatedButton.icon(
-              onPressed: _pngBytes == null ? null : _downloadPng,
+              onPressed: _downloadPng,
               icon: const Icon(LucideIcons.download, size: 18),
               label: const Text('Atsisiųsti PNG'),
               style: ElevatedButton.styleFrom(
@@ -336,17 +586,56 @@ class _TournamentComposerShareSheetState
                 padding: const EdgeInsets.symmetric(vertical: 12),
               ),
             ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: _pngBytes == null ? null : _sharePng,
-              icon: const Icon(LucideIcons.share2, size: 18),
-              label: const Text('Bendrinti'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white,
-                side: const BorderSide(color: Colors.white38),
-                padding: const EdgeInsets.symmetric(vertical: 12),
+            if (!_isIOSPWA) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _sharePng,
+                icon: const Icon(Icons.share, size: 18),
+                label: const Text('Bendrinti'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white38),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
               ),
-            ),
+            ],
+            if (_isIOSPWA)
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 0,
+                  vertical: 12,
+                ),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: Color(0xFFEAB308),
+                        size: 16,
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'iOS programėlėje: atsisiųsk PNG ir nukopijuok '
+                          'nuorodą, tada įkelk į Instagram, Facebook ar '
+                          'kitą tinklą rankomis.',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),

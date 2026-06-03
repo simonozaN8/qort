@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/qort_colors.dart';
+import '../../core/theme/qort_mode_colors.dart';
 import '../../core/constants/match_constants.dart';
 import '../../core/services/match_auto_activate_service.dart';
 import '../../core/utils/datetime_utils.dart';
@@ -404,7 +405,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
           Container(
             color: Colors.black.withOpacity(0.5),
             child: const Center(
-              child: CircularProgressIndicator(color: Color(0xFFD946EF)),
+              child: CircularProgressIndicator(color: QortModeColors.competition),
             ),
           ),
       ],
@@ -429,7 +430,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
     );
 
     String stageLabel = "MAČAS";
-    Color labelColor = const Color(0xFFD946EF);
+    Color labelColor = QortModeColors.competition;
     bool isKnockout = false;
 
     if (stageObj != null) {
@@ -491,7 +492,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isParticipant
-              ? const Color(0xFFD946EF).withOpacity(0.5)
+              ? QortModeColors.competition.withValues(alpha: 0.5)
               : QortColors.border,
         ),
         boxShadow: [
@@ -661,7 +662,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
                         const Text(
                           "TAI JŪS",
                           style: TextStyle(
-                            color: Color(0xFFD946EF),
+                            color: QortModeColors.competition,
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
                           ),
@@ -677,7 +678,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
                             Text(
                               "${match['score_p1'] ?? 0} - ${match['score_p2'] ?? 0}",
                               style: GoogleFonts.bebasNeue(
-                                color: const Color(0xFFD946EF),
+                                color: QortModeColors.competition,
                                 fontSize: 26,
                               ),
                             ),
@@ -719,7 +720,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
                         const Text(
                           "TAI JŪS",
                           style: TextStyle(
-                            color: Color(0xFFD946EF),
+                            color: QortModeColors.competition,
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
                           ),
@@ -954,7 +955,7 @@ class _ScheduleTabState extends State<ScheduleTab> {
           width: double.infinity,
           child: ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFD946EF),
+              backgroundColor: QortModeColors.competition,
             ),
             icon: const Icon(LucideIcons.edit3, color: Colors.white, size: 16),
             label: const Text(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/qort_colors.dart';
+import '../../core/theme/qort_mode_colors.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants/query_limits.dart';
@@ -185,7 +186,7 @@ class _LadderTabState extends State<LadderTab> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Center(
-        child: CircularProgressIndicator(color: Color(0xFFD946EF)),
+        child: CircularProgressIndicator(color: QortModeColors.competition),
       );
     }
 
@@ -202,7 +203,7 @@ class _LadderTabState extends State<LadderTab> {
 
     return RefreshIndicator(
       onRefresh: _loadLadder,
-      color: const Color(0xFFD946EF),
+      color: QortModeColors.competition,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
@@ -281,11 +282,11 @@ class _LadderTabState extends State<LadderTab> {
       height: 160,
       decoration: BoxDecoration(
         color: isMe
-            ? const Color(0xFFD946EF).withOpacity(0.1)
+            ? QortModeColors.competition.withValues(alpha: 0.1)
             : QortColors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isMe ? const Color(0xFFD946EF) : QortColors.border,
+          color: isMe ? QortModeColors.competition : QortColors.border,
           width: isMe ? 2 : 1,
         ),
         boxShadow: [
@@ -334,7 +335,7 @@ class _LadderTabState extends State<LadderTab> {
             const Text(
               "TAI JŪS",
               style: TextStyle(
-                color: Color(0xFFD946EF),
+                color: QortModeColors.competition,
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
               ),

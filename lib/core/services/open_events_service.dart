@@ -25,6 +25,7 @@ class OpenEventsService {
     final eventsBase = client.from('events').select('''
       id, created_at, owner_id,
       name, sport, location, description, organizer,
+      organizer_email, organizer_phone,
       image_url, image_flip_horizontal, cover_filter_preset, start_date, end_date,
       status, approval_status,
       tournaments(id, name, format_code, gender, min_rp, max_rp, entry_fee),

@@ -4,7 +4,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/services/event_sponsor_service.dart';
 import '../../core/widgets/tournament_cover_color_filters.dart';
@@ -25,9 +24,8 @@ class TournamentComposerWidget extends StatelessWidget {
   final List<TournamentLevelInfo> levels;
   final EventSponsor? mainSponsor;
   final List<EventSponsor> extraSponsors;
-  final String? qrUrl;
-  final double qrSize;
   final bool compact;
+  final bool headerOnly;
   final bool flipHorizontal;
   final String? colorFilterPreset;
 
@@ -47,9 +45,8 @@ class TournamentComposerWidget extends StatelessWidget {
     this.levels = const [],
     this.mainSponsor,
     this.extraSponsors = const [],
-    this.qrUrl,
-    this.qrSize = 72,
     this.compact = false,
+    this.headerOnly = false,
     this.flipHorizontal = false,
     this.colorFilterPreset,
   });
@@ -68,197 +65,38 @@ class TournamentComposerWidget extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             _buildBaseImage(),
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.7),
-                      Colors.black.withValues(alpha: 0.95),
-                    ],
-                    stops: const [0.0, 0.2, 0.5, 1.0],
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 12,
-              right: 12,
-              child: Text(
-                'QORT',
-                style: TextStyle(
-                  fontFamily: 'Anton',
-                  fontSize: compact ? 20 : 32,
-                  color: const Color(0xFFEAB308),
-                  letterSpacing: 2,
-                  height: 1,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      offset: const Offset(0, 2),
-                      blurRadius: 4,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Positioned(
-              left: 16,
-              right: qrUrl != null && qrUrl!.isNotEmpty ? 100 : 16,
-              bottom: compact ? 10 : 12,
-              child: compact
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          eventName.toUpperCase(),
-                          style: GoogleFonts.anton(
-                            color: Colors.white,
-                            fontSize: compact ? 18 : 28,
-                            letterSpacing: 1.2,
-                            height: 1.0,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          [
-                            sport,
-                            if (location != null && location!.trim().isNotEmpty)
-                              location!.trim(),
-                          ].join(' · '),
-                          style: const TextStyle(
-                            color: Color(0xFFEAB308),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 8),
-                        _buildMetaRow(),
-                        if (levels.isNotEmpty) ...[
-                          const SizedBox(height: 10),
-                          _buildLevelChips(),
-                        ],
-                      ],
-                    )
-                  : FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.bottomLeft,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            eventName.toUpperCase(),
-                            style: GoogleFonts.anton(
-                              color: Colors.white,
-                              fontSize: 28,
-                              letterSpacing: 1.2,
-                              height: 1.0,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            [
-                              sport,
-                              if (location != null && location!.trim().isNotEmpty)
-                                location!.trim(),
-                            ].join(' · '),
-                            style: const TextStyle(
-                              color: Color(0xFFEAB308),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if ((description?.trim().isNotEmpty ?? false)) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              description!.trim(),
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.85),
-                                fontSize: 12,
-                                fontStyle: FontStyle.italic,
-                                height: 1.3,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                          const SizedBox(height: 8),
-                          _buildMetaRow(),
-                          if (levels.isNotEmpty) ...[
-                            const SizedBox(height: 10),
-                            _buildLevelChips(),
-                          ],
-                          if ((organizerName?.trim().isNotEmpty ?? false)) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              'Organizatorius: ${organizerName!.trim()}',
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.7),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-            ),
-            if (qrUrl != null && qrUrl!.isNotEmpty)
+            Positioned.fill(child: _buildGradient()),
+            Positioned(top: 12, right: 12, child: _buildQortLogo()),
+            if (headerOnly)
               Positioned(
-                right: 12,
-                bottom: 12,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
+                left: 16,
+                right: 16,
+                bottom: 16,
+                child: Text(
+                  eventName.toUpperCase(),
+                  style: GoogleFonts.anton(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      QrImageView(
-                        data: qrUrl!,
-                        size: qrSize,
-                        backgroundColor: Colors.white,
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'SKENUOK',
-                        style: TextStyle(
-                          fontFamily: 'Anton',
-                          fontSize: 10,
-                          color: Colors.black87,
-                          letterSpacing: 1.5,
-                          height: 1.0,
-                        ),
-                      ),
-                      const Text(
-                        'registruokis',
-                        style: TextStyle(
-                          fontSize: 8,
-                          color: Colors.black54,
-                          height: 1.0,
-                        ),
+                    fontSize: 32,
+                    letterSpacing: 1.2,
+                    height: 1.0,
+                    shadows: const [
+                      Shadow(
+                        color: Colors.black,
+                        offset: Offset(0, 2),
+                        blurRadius: 8,
                       ),
                     ],
                   ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
                 ),
+              )
+            else
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: compact ? 10 : 12,
+                child: _buildOverlayContent(),
               ),
           ],
         ),
@@ -296,6 +134,173 @@ class TournamentComposerWidget extends StatelessWidget {
       img = ColorFiltered(colorFilter: filter, child: img);
     }
     return img;
+  }
+
+  Widget _buildGradient() {
+    if (headerOnly) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.transparent,
+              Colors.transparent,
+              Colors.black.withValues(alpha: 0.35),
+            ],
+            stops: const [0.0, 0.55, 1.0],
+          ),
+        ),
+      );
+    }
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.transparent,
+            Colors.transparent,
+            Colors.black.withValues(alpha: 0.7),
+            Colors.black.withValues(alpha: 0.95),
+          ],
+          stops: const [0.0, 0.2, 0.5, 1.0],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQortLogo() {
+    return Text(
+      'QORT',
+      style: TextStyle(
+        fontFamily: 'Anton',
+        fontSize: headerOnly ? 32 : (compact ? 20 : 32),
+        color: const Color(0xFFEAB308),
+        letterSpacing: 2,
+        height: 1,
+        shadows: [
+          Shadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            offset: const Offset(0, 2),
+            blurRadius: 4,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOverlayContent() {
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            eventName.toUpperCase(),
+            style: GoogleFonts.anton(
+              color: Colors.white,
+              fontSize: 18,
+              letterSpacing: 1.2,
+              height: 1.0,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            [
+              sport,
+              if (location != null && location!.trim().isNotEmpty)
+                location!.trim(),
+            ].join(' · '),
+            style: const TextStyle(
+              color: Color(0xFFEAB308),
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 8),
+          _buildMetaRow(),
+          if (levels.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _buildLevelChips(),
+          ],
+        ],
+      );
+    }
+
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.bottomLeft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            eventName.toUpperCase(),
+            style: GoogleFonts.anton(
+              color: Colors.white,
+              fontSize: 28,
+              letterSpacing: 1.2,
+              height: 1.0,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            [
+              sport,
+              if (location != null && location!.trim().isNotEmpty)
+                location!.trim(),
+            ].join(' · '),
+            style: const TextStyle(
+              color: Color(0xFFEAB308),
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if ((description?.trim().isNotEmpty ?? false)) ...[
+            const SizedBox(height: 4),
+            Text(
+              description!.trim(),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.85),
+                fontSize: 12,
+                fontStyle: FontStyle.italic,
+                height: 1.3,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          const SizedBox(height: 8),
+          _buildMetaRow(),
+          if (levels.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _buildLevelChips(),
+          ],
+          if ((organizerName?.trim().isNotEmpty ?? false)) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Organizatorius: ${organizerName!.trim()}',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.7),
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _buildMetaRow() {
