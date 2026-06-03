@@ -3,33 +3,30 @@ set -e
 
 echo "=== QORT Vercel Build ==="
 
-# Patikrinti ar Flutter SDK jau yra (iš ankstesnio build cache)
+FLUTTER_VERSION="3.41.6"
+
 if [ -d "flutter" ] && [ -f "flutter/bin/flutter" ]; then
-  echo "✓ Flutter SDK rastas cache'e, atnaujinam..."
+  echo "✓ Flutter SDK rastas cache'e"
   cd flutter
-  git pull origin stable || echo "Pull klaida - tęsiam su esama versija"
+  git fetch --tags
+  git checkout $FLUTTER_VERSION
   cd ..
 else
-  echo "→ Flutter SDK klonuojam (pirmas build'as)..."
+  echo "→ Flutter $FLUTTER_VERSION klonuojam..."
   rm -rf flutter
-  git clone https://github.com/flutter/flutter.git -b stable --depth 1
+  git clone https://github.com/flutter/flutter.git --depth 1 -b $FLUTTER_VERSION
 fi
 
-# Pridėti flutter prie PATH
 export PATH="$PATH:$(pwd)/flutter/bin"
 
-# Diagnostika
 echo "=== Flutter versija ==="
 flutter --version
 
-# Konfigūracija
 flutter config --enable-web
 
-# Dependencies
 echo "=== Pub get ==="
 flutter pub get
 
-# Build
 echo "=== Build web release ==="
 flutter build web --release
 
