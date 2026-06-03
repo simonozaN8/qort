@@ -322,39 +322,47 @@ class TournamentComposerWidget extends StatelessWidget {
   }
 
   Widget _buildLevelChips() {
-    final visible = compact ? levels.take(3).toList() : levels;
-    final remaining = levels.length - visible.length;
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
+    if (compact) {
+      final visibleLevels = levels.take(6).toList();
+      final hiddenCount = levels.length - visibleLevels.length;
+
+      return Wrap(
+        spacing: 4,
+        runSpacing: 4,
         children: [
-          ...visible.map((l) => _buildLevelChip(l)),
-          if (compact && remaining > 0) _buildMoreBadge(remaining),
+          ...visibleLevels.map((l) => _buildLevelChip(l)),
+          if (hiddenCount > 0) _buildMoreBadge(hiddenCount),
         ],
-      ),
+      );
+    }
+
+    return Wrap(
+      spacing: 4,
+      runSpacing: 4,
+      children: levels.map((l) => _buildLevelChip(l)).toList(),
     );
   }
 
   Widget _buildLevelChip(TournamentLevelInfo level) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.35),
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(
-            color: const Color(0xFF22C55E).withValues(alpha: 0.9),
-          ),
+    final text = level.displayText;
+    final fontSize = compact && text.length > 25 ? 10.0 : 11.0;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: const Color(0xFF22C55E).withValues(alpha: 0.9),
         ),
-        child: Text(
-          level.displayText,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            height: 1.0,
-          ),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: fontSize,
+          fontWeight: FontWeight.w600,
+          height: 1.0,
         ),
       ),
     );
@@ -362,21 +370,16 @@ class TournamentComposerWidget extends StatelessWidget {
 
   Widget _buildMoreBadge(int n) {
     return Container(
-      height: 24,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.45),
+        color: Colors.white.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: Colors.white24),
       ),
-      child: Center(
-        child: Text(
-          '+$n',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-          ),
+      child: Text(
+        '+$n',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
         ),
       ),
     );

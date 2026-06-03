@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/services/event_sponsor_service.dart';
 
@@ -96,24 +97,39 @@ class TournamentSponsorBand extends StatelessWidget {
     required bool isMain,
     required bool compact,
   }) {
-    final logoHeight = isMain ? (compact ? 28.0 : 50.0) : (compact ? 22.0 : 32.0);
+    final logoHeight =
+        isMain ? (compact ? 28.0 : 50.0) : (compact ? 22.0 : 32.0);
+
+    final logoWidget = Container(
+      height: logoHeight,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(4),
+        border: isMain
+            ? Border.all(color: const Color(0xFFEAB308), width: 1.5)
+            : null,
+      ),
+      child: _logo(s),
+    );
+
+    final hasUrl = s.websiteUrl != null && s.websiteUrl!.trim().isNotEmpty;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Container(
-          height: logoHeight,
-          padding: const EdgeInsets.all(3),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.95),
-            borderRadius: BorderRadius.circular(4),
-            border: isMain
-                ? Border.all(color: const Color(0xFFEAB308), width: 1.5)
-                : null,
-          ),
-          child: _logo(s),
-        ),
+        if (hasUrl)
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(4),
+              onTap: () => _launchSponsorUrl(s.websiteUrl!),
+              child: logoWidget,
+            ),
+          )
+        else
+          logoWidget,
         if (!compact && (s.sponsorLabel?.trim().isNotEmpty ?? false)) ...[
           const SizedBox(height: 3),
           Text(
@@ -144,3 +160,23 @@ class TournamentSponsorBand extends StatelessWidget {
   }
 }
 
+Future<void> _launchSponsorUrl(String rawUrl) async {
+  String url = rawUrl.trim();
+
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = 'https://$url';
+  }
+
+  final uri = Uri.tryParse(url);
+  if (uri == null) return;
+
+  try {
+    await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+      webOnlyWindowName: '_blank',
+    );
+  } catch (e) {
+    debugPrint('Nepavyko atidaryti URL: $url, klaida: $e');
+  }
+}

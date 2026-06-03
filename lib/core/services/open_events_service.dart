@@ -28,7 +28,7 @@ class OpenEventsService {
       image_url, image_flip_horizontal, cover_filter_preset, start_date, end_date,
       status, approval_status,
       tournaments(id, name, format_code, gender, min_rp, max_rp, entry_fee),
-      event_sponsors(id, logo_url, name, sponsor_label, is_main, display_order)
+      event_sponsors(id, logo_url, name, sponsor_label, website_url, is_main, display_order)
     ''').eq('status', 'open').eq(
           'approval_status',
           EventOrganizerPolicy.approvalApproved,

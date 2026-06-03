@@ -1435,12 +1435,19 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                           ),
                           const SizedBox(height: 8),
                           TextField(
-                            onChanged: (v) => setState(() {
-                              _sponsors[idx] = s.copyWith(websiteUrl: v);
-                            }),
+                            keyboardType: TextInputType.url,
+                            onChanged: (v) {
+                              if (v.trim().toLowerCase().startsWith('javascript:')) {
+                                return;
+                              }
+                              setState(() {
+                                _sponsors[idx] = s.copyWith(websiteUrl: v.trim());
+                              });
+                            },
                             style: const TextStyle(color: Colors.white),
                             decoration: const InputDecoration(
-                              hintText: 'Website (optional)',
+                              labelText: 'Website (optional)',
+                              hintText: 'pvz. https://sportland.lt',
                               hintStyle: TextStyle(color: Colors.white38),
                               isDense: true,
                             ),
