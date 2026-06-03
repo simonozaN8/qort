@@ -10,19 +10,16 @@ enum OpenEventsSortMode {
 
   /// Artimiausi pagal start_date; be datos — pabaigoje.
   soonest,
+
+  /// Daugiausiai registracijų (participants_count DESC).
+  mostPopular,
 }
 
 /// Vieši atviri renginiai ir turnyrai (kalendorius / „Atrask“).
 class OpenEventsService {
   OpenEventsService._();
 
-  static Future<List<dynamic>> loadOpenEvents({
-    int limit = QueryLimits.tournamentList,
-    OpenEventsSortMode sortMode = OpenEventsSortMode.newest,
-  }) async {
-    final client = Supabase.instance.client;
-
-    final eventsBase = client.from('events').select('''
+  static const _eventsSelect = '''
       id, created_at, owner_id,
       name, sport, location, description, organizer,
       organizer_email, organizer_phone,
@@ -30,7 +27,18 @@ class OpenEventsService {
       status, approval_status,
       tournaments(id, name, format_code, gender, min_rp, max_rp, entry_fee),
       event_sponsors(id, logo_url, name, sponsor_label, website_url, is_main, display_order)
-    ''').eq('status', 'open').eq(
+    ''';
+
+  static Future<List<dynamic>> loadOpenEvents({
+    int limit = QueryLimits.tournamentList,
+    OpenEventsSortMode sortMode = OpenEventsSortMode.newest,
+  }) async {
+    final client = Supabase.instance.client;
+
+    final eventsBase = client.from('events').select(_eventsSelect).eq(
+          'status',
+          'open',
+        ).eq(
           'approval_status',
           EventOrganizerPolicy.approvalApproved,
         );
@@ -45,6 +53,7 @@ class OpenEventsService {
 
     switch (sortMode) {
       case OpenEventsSortMode.newest:
+      case OpenEventsSortMode.mostPopular:
         eventsRes = await eventsBase.order('created_at', ascending: false).limit(
               limit,
             );
@@ -61,6 +70,25 @@ class OpenEventsService {
             .limit(limit);
         break;
     }
+
+    final tournamentIds = <String>{};
+    for (final event in eventsRes) {
+      if (event is! Map) continue;
+      for (final t in (event['tournaments'] as List? ?? [])) {
+        if (t is Map && t['id'] != null) {
+          tournamentIds.add(t['id'].toString());
+        }
+      }
+    }
+    for (final t in tournamentsRes) {
+      if (t is Map && t['id'] != null) {
+        tournamentIds.add(t['id'].toString());
+      }
+    }
+
+    final counts = await _loadParticipantCounts(client, tournamentIds.toList());
+    _attachParticipantsCounts(eventsRes, counts, isEventList: true);
+    _attachParticipantsCounts(tournamentsRes, counts, isEventList: false);
 
     final combined = <dynamic>[];
 
@@ -89,6 +117,49 @@ class OpenEventsService {
     return combined;
   }
 
+  static Future<Map<String, int>> _loadParticipantCounts(
+    SupabaseClient client,
+    List<String> tournamentIds,
+  ) async {
+    if (tournamentIds.isEmpty) return {};
+
+    final data = await client
+        .from('tournament_participants')
+        .select('tournament_id')
+        .inFilter('tournament_id', tournamentIds);
+
+    final counts = <String, int>{};
+    for (final row in data) {
+      if (row is! Map) continue;
+      final tid = row['tournament_id']?.toString();
+      if (tid != null) {
+        counts[tid] = (counts[tid] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
+
+  static void _attachParticipantsCounts(
+    List<dynamic> items,
+    Map<String, int> counts, {
+    required bool isEventList,
+  }) {
+    for (final item in items) {
+      if (item is! Map) continue;
+      if (isEventList) {
+        var total = 0;
+        for (final t in (item['tournaments'] as List? ?? [])) {
+          if (t is Map) {
+            total += counts[t['id']?.toString()] ?? 0;
+          }
+        }
+        item['participants_count'] = total;
+      } else {
+        item['participants_count'] = counts[item['id']?.toString()] ?? 0;
+      }
+    }
+  }
+
   static int _compare(
     dynamic a,
     dynamic b,
@@ -108,6 +179,10 @@ class OpenEventsService {
         if (aMissing) return 1;
         if (bMissing) return -1;
         return startA.compareTo(startB);
+      case OpenEventsSortMode.mostPopular:
+        final countA = (a['participants_count'] as num?)?.toInt() ?? 0;
+        final countB = (b['participants_count'] as num?)?.toInt() ?? 0;
+        return countB.compareTo(countA);
     }
   }
 }

@@ -21,7 +21,35 @@ import '../../core/services/event_sponsor_service.dart';
 import '../admin/tournament_sponsor_band.dart';
 
 import 'event_detail_screen.dart';
-import 'tournament_detail_screen.dart'; // Būtina, kad atidarytų pavienius turnyrus
+import 'tournament_detail_screen.dart';
+
+class _FilterState {
+  final OpenEventsSortMode sort;
+  final String sport;
+  final String? city;
+
+  const _FilterState({
+    this.sort = OpenEventsSortMode.newest,
+    this.sport = 'VISI',
+    this.city,
+  });
+
+  bool get isDefault =>
+      sort == OpenEventsSortMode.newest && sport == 'VISI' && city == null;
+
+  _FilterState copyWith({
+    OpenEventsSortMode? sort,
+    String? sport,
+    String? city,
+    bool clearCity = false,
+  }) {
+    return _FilterState(
+      sort: sort ?? this.sort,
+      sport: sport ?? this.sport,
+      city: clearCity ? null : (city ?? this.city),
+    );
+  }
+}
 
 class TournamentListScreen extends StatefulWidget {
   const TournamentListScreen({super.key});
@@ -31,11 +59,13 @@ class TournamentListScreen extends StatefulWidget {
 }
 
 class _TournamentListScreenState extends State<TournamentListScreen> {
-  String _selectedFilter = "VISI";
-  List<String> _filters = ["VISI"];
+  _FilterState _filterState = const _FilterState();
+  List<String> _availableSports = [];
+  List<String> _availableCities = [];
   List<dynamic> _events = [];
   bool _isLoading = true;
-  OpenEventsSortMode _sortMode = OpenEventsSortMode.newest;
+
+  bool get _hasActiveFilters => !_filterState.isDefault;
 
   @override
   void initState() {
@@ -47,10 +77,10 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
     try {
       final names = await SportsCatalogService.activeSportNames();
       if (mounted) {
-        setState(() => _filters = ["VISI", ...names]);
+        setState(() => _availableSports = names);
       }
     } catch (e) {
-      debugPrint("Klaida kraunant sportų filtrus: $e");
+      debugPrint('Klaida kraunant sportų filtrus: $e');
     }
     await _loadEvents();
   }
@@ -60,7 +90,7 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
     try {
       final combinedList = await OpenEventsService.loadOpenEvents(
         limit: QueryLimits.tournamentList,
-        sortMode: _sortMode,
+        sortMode: _filterState.sort,
       );
 
       if (mounted) {
@@ -68,32 +98,150 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
           _events = combinedList;
           _isLoading = false;
         });
+        _loadAvailableCities();
       }
     } catch (e) {
-      debugPrint("Klaida kraunant kalendorių: $e");
+      debugPrint('Klaida kraunant kalendorių: $e');
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _onSortModeChanged(OpenEventsSortMode mode) {
-    if (_sortMode == mode) return;
-    setState(() => _sortMode = mode);
-    _loadEvents();
+  void _loadAvailableCities() {
+    final normalized = <String, String>{};
+
+    for (final event in _events) {
+      final raw = event['location']?.toString().trim() ?? '';
+      if (raw.isEmpty) continue;
+
+      final key = raw.toLowerCase();
+      if (!normalized.containsKey(key)) {
+        final display =
+            raw[0].toUpperCase() + raw.substring(1).toLowerCase();
+        normalized[key] = display;
+      }
+    }
+
+    final cities = normalized.values.toList()..sort();
+
+    setState(() => _availableCities = cities);
+  }
+
+  List<dynamic> _displayedEvents() {
+    var events = List<dynamic>.from(_events);
+
+    if (_filterState.sport != 'VISI') {
+      final sport = _filterState.sport.toLowerCase();
+      events = events
+          .where(
+            (e) => e['sport']?.toString().toLowerCase() == sport,
+          )
+          .toList();
+    }
+
+    if (_filterState.city != null) {
+      final filterCity = _filterState.city!.toLowerCase().trim();
+      events = events.where((e) {
+        final eventCity =
+            e['location']?.toString().toLowerCase().trim() ?? '';
+        return eventCity == filterCity;
+      }).toList();
+    }
+
+    return events;
+  }
+
+  Future<void> _openFilterSheet() async {
+    final result = await showModalBottomSheet<_FilterState>(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _FilterSheet(
+        initial: _filterState,
+        availableCities: _availableCities,
+        availableSports: _availableSports,
+      ),
+    );
+
+    if (result != null && mounted) {
+      final sortChanged = result.sort != _filterState.sort;
+      setState(() => _filterState = result);
+      if (sortChanged) {
+        await _loadEvents();
+      }
+    }
+  }
+
+  String _sortLabel(OpenEventsSortMode mode) {
+    return switch (mode) {
+      OpenEventsSortMode.newest => 'Naujausi',
+      OpenEventsSortMode.soonest => 'Artimiausi',
+      OpenEventsSortMode.mostPopular => 'Populiariausi',
+    };
+  }
+
+  Widget _buildActiveFiltersBar() {
+    final chips = <Widget>[];
+
+    if (_filterState.sort != OpenEventsSortMode.newest) {
+      chips.add(
+        _FilterTag(
+          label: _sortLabel(_filterState.sort),
+          onRemove: () {
+            setState(
+              () => _filterState = _filterState.copyWith(
+                sort: OpenEventsSortMode.newest,
+              ),
+            );
+            _loadEvents();
+          },
+        ),
+      );
+    }
+    if (_filterState.sport != 'VISI') {
+      chips.add(
+        _FilterTag(
+          label: _filterState.sport,
+          onRemove: () {
+            setState(
+              () => _filterState = _filterState.copyWith(sport: 'VISI'),
+            );
+          },
+        ),
+      );
+    }
+    if (_filterState.city != null) {
+      chips.add(
+        _FilterTag(
+          label: _filterState.city!,
+          onRemove: () {
+            setState(
+              () => _filterState = _filterState.copyWith(clearCity: true),
+            );
+          },
+        ),
+      );
+    }
+
+    if (chips.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: chips,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    List<dynamic> displayedEvents = _selectedFilter == "VISI"
-        ? _events
-        : _events
-              .where(
-                (e) =>
-                    e['sport']?.toString().toLowerCase() ==
-                    _selectedFilter.toLowerCase(),
-              )
-              .toList();
-
+    final displayedEvents = _displayedEvents();
     final p = context.qortPalette;
+    const accent = QortDesignSystem.competition;
 
     return Scaffold(
       backgroundColor: p.background,
@@ -104,121 +252,105 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 520),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 12, 0),
-                      child: QortCompactHero(
-                        mode: AppMode.competition,
-                        title: 'Turnyrai · Kalendorius',
-                        subtitle: '${displayedEvents.length} renginiai',
-                      ),
+                child: RefreshIndicator(
+                  color: QortColors.primary,
+                  onRefresh: _loadEvents,
+                  child: CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(
+                      parent: BouncingScrollPhysics(),
                     ),
-                    const SizedBox(height: 8),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 12, 0),
-                      child: Text(
-                        'RIKIAVIMAS',
-                        style: QortTheme.sectionTitle(p),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    SizedBox(
-                      height: 40,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        children: [
-                          QortPill(
-                            label: 'Naujausi',
-                            icon: LucideIcons.sparkles,
-                            selected: _sortMode == OpenEventsSortMode.newest,
-                            color: QortDesignSystem.competition,
-                            onTap: () =>
-                                _onSortModeChanged(OpenEventsSortMode.newest),
+                    slivers: [
+                      SliverAppBar(
+                        expandedHeight: 130,
+                        floating: true,
+                        snap: true,
+                        pinned: false,
+                        backgroundColor: Colors.transparent,
+                        elevation: 0,
+                        scrolledUnderElevation: 0,
+                        automaticallyImplyLeading: false,
+                        actions: [
+                          IconButton(
+                            icon: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Icon(
+                                  LucideIcons.slidersHorizontal,
+                                  color: p.textSecondary,
+                                ),
+                                if (_hasActiveFilters)
+                                  Positioned(
+                                    right: 0,
+                                    top: 0,
+                                    child: Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: const BoxDecoration(
+                                        color: accent,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            onPressed: _openFilterSheet,
                           ),
-                          const SizedBox(width: 8),
-                          QortPill(
-                            label: 'Artimiausi',
-                            icon: LucideIcons.calendarClock,
-                            selected: _sortMode == OpenEventsSortMode.soonest,
-                            color: QortDesignSystem.competition,
-                            onTap: () =>
-                                _onSortModeChanged(OpenEventsSortMode.soonest),
-                          ),
+                          const SizedBox(width: 4),
                         ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 12, 0),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'FILTRAI',
-                              style: QortTheme.sectionTitle(p),
+                        flexibleSpace: FlexibleSpaceBar(
+                          background: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 12, 0),
+                            child: Align(
+                              alignment: Alignment.bottomLeft,
+                              child: QortCompactHero(
+                                mode: AppMode.competition,
+                                title: 'Turnyrai · Kalendorius',
+                                subtitle: '${displayedEvents.length} renginiai',
+                              ),
                             ),
                           ),
-                          IconButton(
-                            icon: Icon(LucideIcons.search, color: p.textSecondary),
-                            onPressed: () {},
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
-              SizedBox(
-                height: 44,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  itemCount: _filters.length,
-                  itemBuilder: (context, index) {
-                    final filter = _filters[index];
-                    final isSelected = _selectedFilter == filter;
-                    return QortPill(
-                      label: filter,
-                      icon: filter != 'VISI'
-                          ? null
-                          : LucideIcons.layoutGrid,
-                      selected: isSelected,
-                      color: QortDesignSystem.competition,
-                      onTap: () => setState(() => _selectedFilter = filter),
-                    );
-                  },
-                ),
-              ),
-              Expanded(
-                child: _isLoading
-                    ? const Center(
-                        child: CircularProgressIndicator(color: QortColors.primary),
-                      )
-                    : displayedEvents.isEmpty
-                        ? const Center(
+                      if (_hasActiveFilters)
+                        SliverToBoxAdapter(child: _buildActiveFiltersBar()),
+                      if (_isLoading)
+                        const SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              color: QortColors.primary,
+                            ),
+                          ),
+                        )
+                      else if (displayedEvents.isEmpty)
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Center(
                             child: Text(
                               'Šiuo metu renginių nėra.',
-                              style: TextStyle(color: QortColors.textSecondary),
-                            ),
-                          )
-                        : RefreshIndicator(
-                            color: QortColors.primary,
-                            onRefresh: _loadEvents,
-                            child: ListView.builder(
-                              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                              itemCount: displayedEvents.length + 1,
-                              itemBuilder: (context, index) {
-                                if (index == displayedEvents.length) {
-                                  return SizedBox(
-                                    height: AppShellLayout.scrollBottomPadding(context),
-                                  );
-                                }
-                                return _buildEventCard(displayedEvents[index]);
-                              },
+                              style: TextStyle(color: p.textSecondary),
                             ),
                           ),
-              ),
-            ],
+                        )
+                      else
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                          sliver: SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) => _buildEventCard(
+                                displayedEvents[index] as Map<String, dynamic>,
+                              ),
+                              childCount: displayedEvents.length,
+                            ),
+                          ),
+                        ),
+                      SliverToBoxAdapter(
+                        child: SizedBox(
+                          height: AppShellLayout.scrollBottomPadding(context),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -230,30 +362,29 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
 
   Widget _buildEventCard(Map<String, dynamic> event) {
     final p = context.qortPalette;
-    bool isParentEvent = event['is_parent_event'] == true;
+    final isParentEvent = event['is_parent_event'] == true;
     final sponsorsRaw = (event['event_sponsors'] as List?) ?? const [];
     final sponsors = sponsorsRaw
         .whereType<Map>()
         .map((j) => EventSponsor.fromJson(Map<String, dynamic>.from(j)))
         .toList();
     final mainList = sponsors.where((s) => s.isMain).toList();
-    final EventSponsor? mainSponsor = mainList.isNotEmpty ? mainList.first : null;
+    final EventSponsor? mainSponsor =
+        mainList.isNotEmpty ? mainList.first : null;
     final extraSponsors = sponsors.where((s) => !s.isMain).toList();
 
-    String startDate = event['start_date'] != null
+    final startDate = event['start_date'] != null
         ? DateFormat('MM-dd').format(DateTime.parse(event['start_date']))
         : '';
-    String endDate = event['end_date'] != null
+    final endDate = event['end_date'] != null
         ? DateFormat('MM-dd').format(DateTime.parse(event['end_date']))
         : '';
-    String dateString = startDate.isNotEmpty
-        ? "$startDate - $endDate"
-        : "Nenustatyta";
-    String sport = event['sport']?.toString().toUpperCase() ?? "SPORTAS";
+    final dateString =
+        startDate.isNotEmpty ? '$startDate - $endDate' : 'Nenustatyta';
+    final sport = event['sport']?.toString().toUpperCase() ?? 'SPORTAS';
 
     return GestureDetector(
       onTap: () {
-        // NUKREIPIAME PRIKLAUSOMAI NUO TO, AR TAI RENGINYS, AR PAVIENIS TURNYRAS
         if (isParentEvent) {
           Navigator.push(
             context,
@@ -330,7 +461,9 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
                             const SizedBox(width: 5),
                             Text(
                               dateString,
-                              style: QortDesignSystem.caption.copyWith(fontSize: 12),
+                              style: QortDesignSystem.caption.copyWith(
+                                fontSize: 12,
+                              ),
                             ),
                           ],
                         ),
@@ -338,7 +471,7 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
                     ),
                     const SizedBox(height: QortDesignSystem.space3),
                     Text(
-                      event['name'] ?? "Renginys",
+                      event['name'] ?? 'Renginys',
                       style: QortDesignSystem.h3,
                     ),
                     const SizedBox(height: 8),
@@ -352,7 +485,7 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
                         const SizedBox(width: 5),
                         Expanded(
                           child: Text(
-                            event['location'] ?? "Vieta nenustatyta",
+                            event['location'] ?? 'Vieta nenustatyta',
                             style: QortDesignSystem.caption,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -364,6 +497,240 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
               )
             else
               const SizedBox(height: 6),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterTag extends StatelessWidget {
+  final String label;
+  final VoidCallback onRemove;
+
+  const _FilterTag({
+    required this.label,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const accent = QortDesignSystem.competition;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: accent.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: accent,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: onRemove,
+            child: const Icon(
+              LucideIcons.x,
+              size: 14,
+              color: accent,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterSheet extends StatefulWidget {
+  final _FilterState initial;
+  final List<String> availableCities;
+  final List<String> availableSports;
+
+  const _FilterSheet({
+    required this.initial,
+    required this.availableCities,
+    required this.availableSports,
+  });
+
+  @override
+  State<_FilterSheet> createState() => _FilterSheetState();
+}
+
+class _FilterSheetState extends State<_FilterSheet> {
+  static const _accent = QortDesignSystem.competition;
+
+  late OpenEventsSortMode _sort;
+  late String _sport;
+  late String? _city;
+
+  @override
+  void initState() {
+    super.initState();
+    _sort = widget.initial.sort;
+    _sport = widget.initial.sport;
+    _city = widget.initial.city;
+  }
+
+  bool get _hasAnyChange =>
+      _sort != OpenEventsSortMode.newest ||
+      _sport != 'VISI' ||
+      _city != null;
+
+  void _reset() {
+    setState(() {
+      _sort = OpenEventsSortMode.newest;
+      _sport = 'VISI';
+      _city = null;
+    });
+  }
+
+  TextStyle _labelStyle(BuildContext context) {
+    return QortTheme.sectionTitle(context.qortPalette);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, bottom + 20),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('FILTRAI', style: _labelStyle(context)),
+                const Spacer(),
+                if (_hasAnyChange)
+                  TextButton(
+                    onPressed: _reset,
+                    child: const Text('Išvalyti'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text('RIKIAVIMAS', style: _labelStyle(context)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                QortPill(
+                  label: 'Naujausi',
+                  icon: LucideIcons.sparkles,
+                  selected: _sort == OpenEventsSortMode.newest,
+                  color: _accent,
+                  onTap: () =>
+                      setState(() => _sort = OpenEventsSortMode.newest),
+                ),
+                QortPill(
+                  label: 'Artimiausi',
+                  icon: LucideIcons.calendarClock,
+                  selected: _sort == OpenEventsSortMode.soonest,
+                  color: _accent,
+                  onTap: () =>
+                      setState(() => _sort = OpenEventsSortMode.soonest),
+                ),
+                QortPill(
+                  label: 'Populiariausi',
+                  icon: LucideIcons.users,
+                  selected: _sort == OpenEventsSortMode.mostPopular,
+                  color: _accent,
+                  onTap: () =>
+                      setState(() => _sort = OpenEventsSortMode.mostPopular),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Text('SPORTO ŠAKA', style: _labelStyle(context)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                QortPill(
+                  label: 'VISI',
+                  icon: LucideIcons.layoutGrid,
+                  selected: _sport == 'VISI',
+                  color: _accent,
+                  onTap: () => setState(() => _sport = 'VISI'),
+                ),
+                ...widget.availableSports.map(
+                  (s) => QortPill(
+                    label: s,
+                    selected: _sport == s,
+                    color: _accent,
+                    onTap: () => setState(() => _sport = s),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Text('MIESTAS', style: _labelStyle(context)),
+            const SizedBox(height: 8),
+            InputDecorator(
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.white10,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String?>(
+                  value: _city,
+                  isExpanded: true,
+                  dropdownColor: const Color(0xFF2A2A2A),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('Visi miestai'),
+                    ),
+                    ...widget.availableCities.map(
+                      (c) => DropdownMenuItem<String?>(
+                        value: c,
+                        child: Text(c),
+                      ),
+                    ),
+                  ],
+                  onChanged: (val) => setState(() => _city = val),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(
+                  context,
+                  _FilterState(sort: _sort, sport: _sport, city: _city),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _accent,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: const Text(
+                  'TAIKYTI FILTRUS',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
           ],
         ),
       ),
