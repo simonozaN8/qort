@@ -23,6 +23,7 @@ import 'status_avatar.dart';
 import 'my_records_screen.dart';
 import 'insights_screen.dart';
 import '../teams/my_teams_screen.dart';
+import 'my_tournaments_screen.dart';
 import '../admin/admin_dashboard_screen.dart';
 import '../home/social_screen.dart';
 import '../leaderboard/leaderboard_screen.dart';
@@ -45,6 +46,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _isUploading = false;
+  bool _isSuperAdmin = false;
   String _selectedSportName = "";
   Map<String, SportCatalogEntry> _catalogBySport = {};
 
@@ -53,6 +55,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     _checkSelectedSport();
     _loadSportCatalog();
+    _loadIsSuperAdmin();
+  }
+
+  Future<void> _loadIsSuperAdmin() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final data = await Supabase.instance.client
+          .from('profiles')
+          .select('is_super_admin')
+          .eq('id', user.id)
+          .single();
+      if (mounted) {
+        setState(() {
+          _isSuperAdmin = data['is_super_admin'] as bool? ?? false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Klaida kraunant super admin statusą: $e');
+    }
   }
 
   Future<void> _loadSportCatalog() async {
@@ -210,18 +233,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
         elevation: 0,
         iconTheme: IconThemeData(color: p.textPrimary),
         actions: [
-          IconButton(
-            icon: const Icon(LucideIcons.shieldAlert, color: Colors.redAccent),
-            tooltip: "Admin Pultas",
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AdminDashboardScreen(),
-                ),
-              );
-            },
-          ),
+          if (_isSuperAdmin)
+            IconButton(
+              icon: const Icon(LucideIcons.shieldAlert, color: Colors.redAccent),
+              tooltip: 'Super Admin skydelis',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AdminDashboardScreen(),
+                  ),
+                );
+              },
+            ),
           IconButton(
             icon: const Icon(LucideIcons.settings, color: QortColors.textSecondary),
             onPressed: () async {
@@ -735,8 +759,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               _profileZoneRow(
                 context,
+                icon: LucideIcons.layoutGrid,
+                iconColor: const Color(0xFFEAB308),
+                title: 'Mano turnyrai',
+                subtitle: 'Sukurti, draft\'ai, statusas',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MyTournamentsScreen()),
+                ),
+              ),
+              const Divider(height: 1, color: QortColors.border, indent: 44),
+              _profileZoneRow(
+                context,
                 icon: LucideIcons.shield,
-                iconColor: Colors.amber,
+                iconColor: Colors.redAccent,
                 title: 'Mano komandos',
                 subtitle: 'Kurk komandas ir kviesk narius',
                 onTap: () => Navigator.push(

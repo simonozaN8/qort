@@ -37,7 +37,10 @@ class EventApprovalService {
         .eq('event_id', eventId);
   }
 
-  static Future<void> rejectEvent(String eventId, {String? adminNote}) async {
+  static Future<void> rejectEvent({
+    required String eventId,
+    required String reason,
+  }) async {
     final client = Supabase.instance.client;
     final reviewer = client.auth.currentUser?.id;
 
@@ -45,16 +48,11 @@ class EventApprovalService {
         .from('events')
         .update({
           'approval_status': EventOrganizerPolicy.approvalRejected,
-          'status': 'rejected',
-          'admin_review_note': adminNote,
+          'rejection_reason': reason,
+          'admin_review_note': reason,
           'reviewed_at': DateTime.now().toUtc().toIso8601String(),
           'reviewed_by': reviewer,
         })
         .eq('id', eventId);
-
-    await client
-        .from('tournaments')
-        .update({'status': 'rejected'})
-        .eq('event_id', eventId);
   }
 }

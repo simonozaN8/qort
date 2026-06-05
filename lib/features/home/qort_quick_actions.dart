@@ -139,7 +139,7 @@ class QortQuickActions {
                     context,
                     MaterialPageRoute(
                       builder: (_) =>
-                          const CreateEventScreen(requiresApproval: true),
+                          const CreateEventScreen(),
                     ),
                   );
                 },

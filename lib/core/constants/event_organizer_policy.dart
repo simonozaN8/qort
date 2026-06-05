@@ -5,6 +5,7 @@ class EventOrganizerPolicy {
   /// Bazinė platformos paslaugos kaina (EUR). Mokėjimo integracija — vėliau.
   static const double serviceFeeEur = 49.0;
 
+  static const approvalDraft = 'draft';
   static const approvalPending = 'pending';
   static const approvalApproved = 'approved';
   static const approvalRejected = 'rejected';

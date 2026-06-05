@@ -53,8 +53,13 @@ void _sortDivisionsByLevel(List<dynamic> divisions, String eventName) {
 
 class EventDetailScreen extends StatefulWidget {
   final Map<String, dynamic> event;
+  final bool previewMode;
 
-  const EventDetailScreen({super.key, required this.event});
+  const EventDetailScreen({
+    super.key,
+    required this.event,
+    this.previewMode = false,
+  });
 
   @override
   State<EventDetailScreen> createState() => _EventDetailScreenState();
@@ -342,6 +347,154 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     );
   }
 
+  Widget _buildRulesSection(Map<String, dynamic> e) {
+    final rules = e['rules']?.toString() ?? '';
+    if (rules.trim().isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(LucideIcons.fileText, color: Color(0xFFEAB308), size: 18),
+              SizedBox(width: 8),
+              Text(
+                'TURNYRO TAISYKLĖS',
+                style: TextStyle(
+                  color: Color(0xFFEAB308),
+                  fontFamily: 'Anton',
+                  fontSize: 13,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildRulesPreview(rules),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRulesPreview(String rules) {
+    final isLong = rules.length > 200;
+    final preview = isLong ? '${rules.substring(0, 200)}...' : rules;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          preview,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 13,
+            height: 1.4,
+          ),
+        ),
+        if (isLong) ...[
+          const SizedBox(height: 12),
+          InkWell(
+            onTap: () => _showFullRules(rules),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAB308).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: const Color(0xFFEAB308).withValues(alpha: 0.3),
+                ),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    LucideIcons.maximize2,
+                    color: Color(0xFFEAB308),
+                    size: 14,
+                  ),
+                  SizedBox(width: 6),
+                  Text(
+                    'Skaityti pilnas taisykles',
+                    style: TextStyle(
+                      color: Color(0xFFEAB308),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _showFullRules(String rules) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          constraints: BoxConstraints(
+            maxWidth: 500,
+            maxHeight: MediaQuery.of(ctx).size.height * 0.8,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(LucideIcons.fileText, color: Color(0xFFEAB308)),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'TURNYRO TAISYKLĖS',
+                      style: TextStyle(
+                        color: Color(0xFFEAB308),
+                        fontFamily: 'Anton',
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white70),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const Divider(color: Colors.white24),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Text(
+                    rules,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final e = _event ?? widget.event;
@@ -395,6 +548,10 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
           ),
 
           SliverToBoxAdapter(
+            child: _isLoading ? const SizedBox.shrink() : _buildRulesSection(e),
+          ),
+
+          SliverToBoxAdapter(
             child: _isLoading
                 ? const SizedBox.shrink()
                 : Padding(
@@ -434,6 +591,17 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                           "Spauskite ant norimos kategorijos, kad pamatytumėte detales ir registruotumėtės.",
                           style: TextStyle(color: Colors.grey, fontSize: 12),
                         ),
+                        if (widget.previewMode) ...[
+                          const SizedBox(height: 8),
+                          const Text(
+                            "Peržiūros režimas — registracija neaktyvi.",
+                            style: TextStyle(
+                              color: Color(0xFFEAB308),
+                              fontSize: 12,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 20),
                         if (_divisions.isEmpty)
                           const Center(
@@ -456,15 +624,19 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                           final price = (tierPrice ?? (div['entry_fee'] as num?)?.toDouble() ?? 0).toInt();
 
                           return GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      TournamentDetailScreen(tournament: div),
-                                ),
-                              );
-                            },
+                            onTap: widget.previewMode
+                                ? null
+                                : () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) =>
+                                            TournamentDetailScreen(
+                                          tournament: div,
+                                        ),
+                                      ),
+                                    );
+                                  },
                             child: Container(
                               margin: const EdgeInsets.only(bottom: 15),
                               padding: const EdgeInsets.all(20),

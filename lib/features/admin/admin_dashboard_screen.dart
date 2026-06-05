@@ -10,6 +10,7 @@ import '../../core/services/event_approval_service.dart';
 // Įsitikinkite, kad šie failai yra tame pačiame aplanke
 import 'create_tournament_screen.dart';
 import 'admin_tournament_control_screen.dart';
+import 'tournament_draft_preview_screen.dart';
 import '../design/design_variants_screen.dart';
 import '../../core/theme/qort_palette_extension.dart';
 
@@ -26,11 +27,37 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Map<String, String> _ownerLabels = {};
   bool _isLoading = true;
   bool _loadingPending = true;
+  bool _isSuperAdmin = false;
 
   @override
   void initState() {
     super.initState();
-    _loadAll();
+    _initDashboard();
+  }
+
+  Future<void> _initDashboard() async {
+    await _loadIsSuperAdmin();
+    await _loadAll();
+  }
+
+  Future<void> _loadIsSuperAdmin() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final data = await Supabase.instance.client
+          .from('profiles')
+          .select('is_super_admin')
+          .eq('id', user.id)
+          .single();
+      if (mounted) {
+        setState(() {
+          _isSuperAdmin = data['is_super_admin'] as bool? ?? false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Klaida kraunant super admin statusą: $e');
+    }
   }
 
   Future<void> _loadAll() async {
@@ -38,6 +65,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Future<void> _loadPendingEvents() async {
+    if (!_isSuperAdmin) {
+      if (mounted) {
+        setState(() {
+          _pendingEvents = [];
+          _loadingPending = false;
+        });
+      }
+      return;
+    }
+
     setState(() => _loadingPending = true);
     try {
       final events = await EventApprovalService.fetchPendingEvents();
@@ -231,41 +268,43 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
             const SizedBox(height: 25),
 
-            Text(
-              "PARAIŠKOS RENGINIAMS (${_pendingEvents.length})",
-              style: GoogleFonts.oswald(color: Colors.amber, fontSize: 18),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Mokama paslauga — patvirtinkite ar atminkite, kad viešame kalendoriuje '
-              'nerodytų nepatvirtintų turnyrų.',
-              style: TextStyle(color: QortColors.textSecondary, fontSize: 12, height: 1.35),
-            ),
-            const SizedBox(height: 12),
-            if (_loadingPending)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Center(
-                  child: CircularProgressIndicator(color: Colors.amber),
-                ),
-              )
-            else if (_pendingEvents.isEmpty)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: QortColors.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: QortColors.border),
-                ),
-                child: const Text(
-                  'Nėra laukiančių paraiškų.',
-                  style: TextStyle(color: QortColors.textSecondary),
-                ),
-              )
-            else
-              ..._pendingEvents.map(_buildPendingEventCard),
-            const SizedBox(height: 28),
+            if (_isSuperAdmin) ...[
+              Text(
+                "PARAIŠKOS RENGINIAMS (${_pendingEvents.length})",
+                style: GoogleFonts.oswald(color: Colors.amber, fontSize: 18),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Mokama paslauga — patvirtinkite ar atminkite, kad viešame kalendoriuje '
+                'nerodytų nepatvirtintų turnyrų.',
+                style: TextStyle(color: QortColors.textSecondary, fontSize: 12, height: 1.35),
+              ),
+              const SizedBox(height: 12),
+              if (_loadingPending)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Center(
+                    child: CircularProgressIndicator(color: Colors.amber),
+                  ),
+                )
+              else if (_pendingEvents.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: QortColors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: QortColors.border),
+                  ),
+                  child: const Text(
+                    'Nėra laukiančių paraiškų.',
+                    style: TextStyle(color: QortColors.textSecondary),
+                  ),
+                )
+              else
+                ..._pendingEvents.map(_buildPendingEventCard),
+              const SizedBox(height: 28),
+            ],
 
             Text(
               "MANO TURNYRAI (${_tournaments.length})",
@@ -373,176 +412,78 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Widget _buildPendingEventCard(Map<String, dynamic> e) {
     final ownerId = e['owner_id']?.toString();
-    final owner = ownerId != null ? (_ownerLabels[ownerId] ?? 'Organizatorius') : '—';
+    final owner =
+        ownerId != null ? (_ownerLabels[ownerId] ?? 'Organizatorius') : '—';
     final fee = e['organizer_service_fee'];
     final feeStr = fee != null
         ? '${(fee is num ? fee.toDouble() : double.tryParse(fee.toString()) ?? EventOrganizerPolicy.serviceFeeEur).toStringAsFixed(0)} €'
         : EventOrganizerPolicy.feeLabel();
     final note = e['organizer_note']?.toString();
+    final eventId = e['id']?.toString() ?? '';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.amber.withOpacity(0.4)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            e['name']?.toString() ?? 'Be pavadinimo',
-            style: GoogleFonts.oswald(color: Colors.white, fontSize: 16),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '$owner · ${e['sport'] ?? ''} · ${e['location'] ?? ''} · $feeStr',
-            style: TextStyle(color: Colors.grey[400], fontSize: 12),
-          ),
-          if (note != null && note.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(note, style: const TextStyle(color: QortColors.textSecondary, fontSize: 12)),
-          ],
-          const SizedBox(height: 12),
-          Row(
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        title: Text(
+          e['name']?.toString() ?? 'Be pavadinimo',
+          style: GoogleFonts.oswald(color: Colors.white, fontSize: 16),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _rejectPending(e['id'].toString()),
-                  icon: const Icon(LucideIcons.x, size: 16),
-                  label: const Text('ATMESTI'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.redAccent,
-                    side: const BorderSide(color: Colors.redAccent),
+              Text(
+                '$owner · ${e['sport'] ?? ''} · ${e['location'] ?? ''} · $feeStr',
+                style: TextStyle(color: Colors.grey[400], fontSize: 12),
+              ),
+              if (note != null && note.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  note,
+                  style: const TextStyle(
+                    color: QortColors.textSecondary,
+                    fontSize: 12,
                   ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _approvePending(e['id'].toString()),
-                  icon: const Icon(LucideIcons.check, size: 16),
-                  label: const Text('PATVIRTINTI'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ),
+              ],
             ],
           ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _approvePending(String eventId) async {
-    final noteCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E293B),
-        title: const Text('Patvirtinti renginį?', style: TextStyle(color: QortColors.textPrimary)),
-        content: TextField(
-          controller: noteCtrl,
-          style: const TextStyle(color: QortColors.textPrimary),
-          decoration: const InputDecoration(
-            labelText: 'Pastaba organizatoriui (neprivaloma)',
-            labelStyle: TextStyle(color: QortColors.textSecondary),
-          ),
-          maxLines: 2,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Atšaukti'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Patvirtinti'),
-          ),
-        ],
-      ),
-    );
-    final adminNote = noteCtrl.text.trim();
-    noteCtrl.dispose();
-    if (ok != true) return;
-    try {
-      await EventApprovalService.approveEvent(
-        eventId,
-        adminNote: adminNote.isEmpty ? null : adminNote,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Renginys patvirtintas — matomas viešame kalendoriuje'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        _loadAll();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Klaida: $e'), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
-  Future<void> _rejectPending(String eventId) async {
-    final noteCtrl = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E293B),
-        title: const Text('Atmesti paraišką?', style: TextStyle(color: QortColors.textPrimary)),
-        content: TextField(
-          controller: noteCtrl,
-          style: const TextStyle(color: QortColors.textPrimary),
-          decoration: const InputDecoration(
-            labelText: 'Priežastis (rekomenduojama)',
-            labelStyle: TextStyle(color: QortColors.textSecondary),
-          ),
-          maxLines: 3,
+        trailing: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(LucideIcons.eye, color: Color(0xFFEAB308)),
+            SizedBox(width: 4),
+            Text(
+              'Peržiūrėti',
+              style: TextStyle(color: Color(0xFFEAB308)),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Atšaukti'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Atmesti'),
-          ),
-        ],
+        onTap: eventId.isEmpty
+            ? null
+            : () async {
+                final result = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => TournamentDraftPreviewScreen(
+                      eventId: eventId,
+                      superAdminMode: true,
+                    ),
+                  ),
+                );
+                if (result == true && mounted) {
+                  await _loadPendingEvents();
+                }
+              },
       ),
     );
-    if (ok != true) {
-      noteCtrl.dispose();
-      return;
-    }
-    final note = noteCtrl.text.trim();
-    noteCtrl.dispose();
-    try {
-      await EventApprovalService.rejectEvent(
-        eventId,
-        adminNote: note.isEmpty ? null : note,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Paraiška atmesta'), backgroundColor: Colors.orange),
-        );
-        _loadAll();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Klaida: $e'), backgroundColor: Colors.red),
-        );
-      }
-    }
   }
 }

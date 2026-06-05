@@ -21,14 +21,14 @@ import '../../core/widgets/tournament_cover_color_filters.dart';
 import '../teams/team_formats.dart';
 import 'tournament_composer_widget.dart';
 import 'tournament_composer_preview.dart';
+import 'tournament_draft_preview_screen.dart';
 import 'tournament_sponsor_band.dart';
 
 class CreateEventScreen extends StatefulWidget {
-  /// `true` = paraiška per „+“ (mokama, laukia QORT patvirtinimo).
-  /// `false` = partner/admin skydelis (publikuojama iš karto).
-  final bool requiresApproval;
+  /// Redagavimo režimas — krauna esamą renginį ir UPDATE vietoj INSERT.
+  final String? editEventId;
 
-  const CreateEventScreen({super.key, this.requiresApproval = false});
+  const CreateEventScreen({super.key, this.editEventId});
 
   @override
   State<CreateEventScreen> createState() => _CreateEventScreenState();
@@ -60,7 +60,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   final _organizerEmailCtrl = TextEditingController();
   final _organizerPhoneCtrl = TextEditingController();
   final _organizerNoteCtrl = TextEditingController();
-  bool _acceptedOrganizerTerms = false;
 
   final _minAgeCtrl = TextEditingController(text: "16");
   final _maxAgeCtrl = TextEditingController(text: "99");
@@ -85,11 +84,135 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
   final List<Map<String, dynamic>> _divisions = [];
   final ImagePicker _picker = ImagePicker();
+  String? _existingCoverUrl;
+  bool _loadingEdit = false;
+
+  bool get _isEditMode => widget.editEventId != null;
 
   @override
   void initState() {
     super.initState();
     _loadSportOptions();
+    if (_isEditMode) {
+      _loadEventForEdit();
+    }
+  }
+
+  Future<void> _loadEventForEdit() async {
+    final eventId = widget.editEventId;
+    if (eventId == null) return;
+
+    setState(() => _loadingEdit = true);
+    try {
+      final data = await Supabase.instance.client
+          .from('events')
+          .select('*, tournaments(*), pricing_tiers(*), event_sponsors(*)')
+          .eq('id', eventId)
+          .single();
+
+      final eventMap = Map<String, dynamic>.from(data as Map);
+      final eventName = eventMap['name']?.toString() ?? '';
+      final tournaments = (eventMap['tournaments'] as List?) ?? const [];
+
+      _nameCtrl.text = eventName;
+      _locationCtrl.text = eventMap['location']?.toString() ?? '';
+      _descriptionCtrl.text = eventMap['description']?.toString() ?? '';
+      _rulesCtrl.text = eventMap['rules']?.toString() ?? '';
+      _prizesInfoCtrl.text = eventMap['prizes_info']?.toString() ?? '';
+      _organizerCtrl.text = eventMap['organizer']?.toString() ?? '';
+      _organizerEmailCtrl.text = eventMap['organizer_email']?.toString() ?? '';
+      _organizerPhoneCtrl.text = eventMap['organizer_phone']?.toString() ?? '';
+      _organizerNoteCtrl.text = eventMap['organizer_note']?.toString() ?? '';
+      _isPrivate = eventMap['is_private'] == true;
+      _selectedSport = eventMap['sport']?.toString() ?? _selectedSport;
+      _existingCoverUrl = eventMap['image_url']?.toString();
+      _flipHorizontal = eventMap['image_flip_horizontal'] == true;
+      _coverFilterPreset =
+          eventMap['cover_filter_preset']?.toString() ?? 'original';
+
+      if (eventMap['start_date'] != null) {
+        _startDate = DateTime.parse(eventMap['start_date'].toString());
+      }
+      if (eventMap['end_date'] != null) {
+        _endDate = DateTime.parse(eventMap['end_date'].toString());
+      }
+      if (eventMap['registration_deadline'] != null) {
+        _registrationDeadline =
+            DateTimeUtils.fromIso(eventMap['registration_deadline'].toString());
+      }
+
+      for (final t in _pricingTiers) {
+        t.dispose();
+      }
+      _pricingTiers.clear();
+      for (final tier in PricingTierService.parseList(eventMap['pricing_tiers'])) {
+        final draft = _PricingTierDraft(
+          name: tier.name,
+          priceText: tier.price.toStringAsFixed(
+            tier.price.truncateToDouble() == tier.price ? 0 : 2,
+          ),
+        );
+        draft.validUntil = tier.validUntil;
+        _pricingTiers.add(draft);
+      }
+      if (_pricingTiers.isEmpty) {
+        _pricingTiers.add(_PricingTierDraft(name: 'Įprasta', priceText: '20'));
+      }
+
+      _divisions.clear();
+      if (tournaments.isNotEmpty) {
+        final first = tournaments.first as Map<String, dynamic>;
+        _maxParticipantsCtrl.text =
+            first['max_participants']?.toString() ?? '16';
+        _rpValueCtrl.text = first['rp_value']?.toString() ?? '1000';
+        _prizeCtrl.text = first['prize_pool']?.toString() ?? '';
+        _minAgeCtrl.text = first['min_age']?.toString() ?? '16';
+        _maxAgeCtrl.text = first['max_age']?.toString() ?? '99';
+        _minRpCtrl.text = first['min_rp']?.toString() ?? '0';
+        _minXpCtrl.text = first['min_xp']?.toString() ?? '0';
+      }
+
+      for (final raw in tournaments) {
+        if (raw is! Map) continue;
+        final t = Map<String, dynamic>.from(raw);
+        var divName = t['name']?.toString() ?? '';
+        if (eventName.isNotEmpty && divName.startsWith('$eventName - ')) {
+          divName = divName.replaceFirst('$eventName - ', '').trim();
+        }
+        Map<String, dynamic> divMeta = {};
+        final divsJson = t['divisions'];
+        if (divsJson is List &&
+            divsJson.isNotEmpty &&
+            divsJson.first is Map) {
+          divMeta = Map<String, dynamic>.from(divsJson.first as Map);
+        }
+        _divisions.add({
+          'name': divName,
+          'gender': t['gender_category'] ?? divMeta['gender'] ?? 'Atvira',
+          'format': t['team_format'] ?? divMeta['format'] ?? '1v1',
+          'format_code': t['format_code'] ?? divMeta['format_code'] ?? '1v1',
+          'min_level': divMeta['min_level'] ?? 1,
+          'max_level': divMeta['max_level'] ?? 5,
+          'min_level_label': divMeta['min_level_label']?.toString() ?? '',
+          'max_level_label': divMeta['max_level_label']?.toString() ?? '',
+        });
+      }
+
+      if (mounted) {
+        setState(() => _loadingEdit = false);
+        await _refreshSportEntry();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loadingEdit = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Nepavyko užkrauti renginio: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _loadSportOptions() async {
@@ -192,7 +315,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
   bool get _hasCover =>
       _coverImageFile != null ||
-      (_coverImageBytes != null && _coverImageBytes!.isNotEmpty);
+      (_coverImageBytes != null && _coverImageBytes!.isNotEmpty) ||
+      (_existingCoverUrl != null && _existingCoverUrl!.isNotEmpty);
 
   bool get _hasName => _nameCtrl.text.trim().isNotEmpty;
 
@@ -200,11 +324,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       _selectedSport.isNotEmpty && _sportOptions.isNotEmpty;
 
   bool get _canSubmitEvent =>
-      _hasCover &&
-      _hasName &&
-      _hasSport &&
-      !_isLoading &&
-      (!widget.requiresApproval || _acceptedOrganizerTerms);
+      _hasCover && _hasName && _hasSport && !_isLoading && !_loadingEdit;
 
   String? _genderCodeForDivision(Map<String, dynamic> div) {
     final raw = div['gender']?.toString();
@@ -749,17 +869,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   }
 
   Future<void> _createEventAndTournaments() async {
-    if (widget.requiresApproval && !_acceptedOrganizerTerms) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Patvirtinkite, kad sutinkate su mokama paslauga ir moderacija.',
-          ),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
     if (_nameCtrl.text.isEmpty || _locationCtrl.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -823,11 +932,13 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     final userId = Supabase.instance.client.auth.currentUser?.id;
 
     try {
-      String? mainImgUrl;
-      if (_hasCover) {
+      String? mainImgUrl = _existingCoverUrl;
+      if (_coverImageFile != null ||
+          (_coverImageBytes != null && _coverImageBytes!.isNotEmpty)) {
         final bytes = await _coverBytesForUpload();
         final ext = _coverImageFile?.path.split('.').last.toLowerCase() ?? 'jpg';
-        final safeExt = ['jpg', 'jpeg', 'png', 'webp'].contains(ext) ? ext : 'jpg';
+        final safeExt =
+            ['jpg', 'jpeg', 'png', 'webp'].contains(ext) ? ext : 'jpg';
         mainImgUrl = await _uploadImage(
           userId ?? 'draft',
           bytes,
@@ -836,48 +947,66 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         );
       }
 
-      final isSubmission = widget.requiresApproval;
-      final eventResponse = await Supabase.instance.client
-          .from('events')
-          .insert({
-            'owner_id': userId,
-            'name': _nameCtrl.text.trim(),
-            'sport': _selectedSport,
-            'location': _locationCtrl.text.trim(),
-            'description': _descriptionCtrl.text.trim(),
-            'rules': _rulesCtrl.text.trim(),
-            'start_date': _startDate.toIso8601String(),
-            'end_date': _endDate.toIso8601String(),
-            'organizer': _organizerCtrl.text.trim(),
-            'organizer_email': _organizerEmailCtrl.text.trim().isEmpty
-                ? null
-                : _organizerEmailCtrl.text.trim(),
-            'organizer_phone': _organizerPhoneCtrl.text.trim().isEmpty
-                ? null
-                : _organizerPhoneCtrl.text.trim(),
-            'sponsor': null,
-            'prizes_info': _prizesInfoCtrl.text.trim(),
-            'is_private': _isPrivate,
-            'status': isSubmission ? 'pending' : 'open',
-            'approval_status': isSubmission
-                ? EventOrganizerPolicy.approvalPending
-                : EventOrganizerPolicy.approvalApproved,
-            'payment_status': isSubmission
-                ? EventOrganizerPolicy.paymentUnpaid
-                : EventOrganizerPolicy.paymentConfirmed,
-            'organizer_service_fee': EventOrganizerPolicy.serviceFeeEur,
-            'organizer_note': _organizerNoteCtrl.text.trim().isEmpty
-                ? null
-                : _organizerNoteCtrl.text.trim(),
-            if (_registrationDeadline != null)
-              'registration_deadline':
-                  DateTimeUtils.toIsoUtc(_registrationDeadline!),
-            ..._coverFieldsForInsert(mainImgUrl),
-          })
-          .select()
-          .single();
+      final eventPayload = {
+        'name': _nameCtrl.text.trim(),
+        'sport': _selectedSport,
+        'location': _locationCtrl.text.trim(),
+        'description': _descriptionCtrl.text.trim(),
+        'rules': _rulesCtrl.text.trim(),
+        'start_date': _startDate.toIso8601String(),
+        'end_date': _endDate.toIso8601String(),
+        'organizer': _organizerCtrl.text.trim(),
+        'organizer_email': _organizerEmailCtrl.text.trim().isEmpty
+            ? null
+            : _organizerEmailCtrl.text.trim(),
+        'organizer_phone': _organizerPhoneCtrl.text.trim().isEmpty
+            ? null
+            : _organizerPhoneCtrl.text.trim(),
+        'sponsor': null,
+        'prizes_info': _prizesInfoCtrl.text.trim(),
+        'is_private': _isPrivate,
+        'organizer_note': _organizerNoteCtrl.text.trim().isEmpty
+            ? null
+            : _organizerNoteCtrl.text.trim(),
+        if (_registrationDeadline != null)
+          'registration_deadline':
+              DateTimeUtils.toIsoUtc(_registrationDeadline!),
+        ..._coverFieldsForInsert(mainImgUrl),
+      };
 
-      final eventId = eventResponse['id'].toString();
+      late final String eventId;
+
+      if (_isEditMode) {
+        eventId = widget.editEventId!;
+        await Supabase.instance.client
+            .from('events')
+            .update(eventPayload)
+            .eq('id', eventId);
+
+        final existingTiers = await PricingTierService.listByEvent(eventId);
+        for (final tier in existingTiers) {
+          await PricingTierService.remove(tier.id);
+        }
+
+        await Supabase.instance.client
+            .from('tournaments')
+            .delete()
+            .eq('event_id', eventId);
+      } else {
+        final eventResponse = await Supabase.instance.client
+            .from('events')
+            .insert({
+              ...eventPayload,
+              'owner_id': userId,
+              'status': 'open',
+              'approval_status': EventOrganizerPolicy.approvalDraft,
+              'payment_status': EventOrganizerPolicy.paymentUnpaid,
+              'organizer_service_fee': EventOrganizerPolicy.serviceFeeEur,
+            })
+            .select()
+            .single();
+        eventId = eventResponse['id'].toString();
+      }
 
       final previewTiers = _pricingTiersForPreview();
       final entryFee =
@@ -934,7 +1063,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           'prize_pool': _prizeCtrl.text.trim(),
           'start_date': _startDate.toIso8601String(),
           'end_date': _endDate.toIso8601String(),
-          'status': isSubmission ? 'draft' : 'open',
+          'status': 'draft',
           'gender_category': div['gender'], // Išsaugome specifinę lytį
           'team_format': div['format'],
           'format_code': div['format_code']?.toString() ?? '1v1',
@@ -961,16 +1090,24 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              isSubmission
-                  ? "Paraiška išsiųsta! QORT administratorius peržiūrės renginį "
-                      "(${EventOrganizerPolicy.feeLabel()} paslauga) ir susisieks."
-                  : "Renginys ir visi jo turnyrai sėkmingai sukurti!",
+              _isEditMode
+                  ? 'Renginys atnaujintas!'
+                  : 'Renginys sukurtas kaip draft — peržiūrėk ir publikuok.',
             ),
             backgroundColor: Colors.green,
-            duration: const Duration(seconds: 5),
+            duration: const Duration(seconds: 4),
           ),
         );
-        Navigator.pop(context, true);
+        if (_isEditMode) {
+          Navigator.pop(context, true);
+        } else {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => TournamentDraftPreviewScreen(eventId: eventId),
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -990,7 +1127,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         backgroundColor: QortColors.surface,
         foregroundColor: QortColors.textPrimary,
         title: Text(
-          widget.requiresApproval ? "PARAIŠKA RENGINIUI" : "SUKURTI RENGINĮ",
+          _isEditMode ? 'REDAGUOTI RENGINĮ' : 'SUKURTI RENGINĮ',
           style: GoogleFonts.bebasNeue(
             color: QortColors.textPrimary,
             fontSize: 24,
@@ -1007,42 +1144,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (widget.requiresApproval) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.amber.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.amber.withOpacity(0.5)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(LucideIcons.euro, color: Colors.amber, size: 22),
-                        const SizedBox(width: 8),
-                        Text(
-                          "MOKAMA PASLAUGA · ${EventOrganizerPolicy.feeLabel()}",
-                          style: GoogleFonts.bebasNeue(
-                            color: Colors.amber,
-                            fontSize: 18,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      EventOrganizerPolicy.submissionBannerText,
-                      style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
-                    ),
-                  ],
-                ),
+            if (_loadingEdit)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 16),
+                child: LinearProgressIndicator(color: Color(0xFFEAB308)),
               ),
-              const SizedBox(height: 24),
-            ],
             _buildSectionTitle("PAGRINDINĖ INFORMACIJA"),
             _buildTextField(
               _nameCtrl,
@@ -1231,14 +1337,13 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 ),
               ),
             ),
-            if (widget.requiresApproval)
-              _buildTextField(
-                _organizerNoteCtrl,
-                "Trumpai apie renginį / kontaktas administratoriui (neprivaloma)",
-                icon: LucideIcons.messageSquare,
-                maxLines: 3,
-                help: QortFormHelpTexts.createOrganizerNote,
-              ),
+            _buildTextField(
+              _organizerNoteCtrl,
+              "Trumpai apie renginį / pastaba administratoriui (neprivaloma)",
+              icon: LucideIcons.messageSquare,
+              maxLines: 3,
+              help: QortFormHelpTexts.createOrganizerNote,
+            ),
             _buildSponsorsSection(),
 
             const SizedBox(height: 25),
@@ -1385,20 +1490,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               ),
             ),
 
-            if (widget.requiresApproval) ...[
-              const SizedBox(height: 20),
-              CheckboxListTile(
-                value: _acceptedOrganizerTerms,
-                onChanged: (v) => setState(() => _acceptedOrganizerTerms = v ?? false),
-                activeColor: const Color(0xFFD946EF),
-                controlAffinity: ListTileControlAffinity.leading,
-                contentPadding: EdgeInsets.zero,
-                title: Text(
-                  EventOrganizerPolicy.termsCheckboxLabel,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12, height: 1.35),
-                ),
-              ),
-            ],
             const SizedBox(height: 16),
             Text(
               _hasCover && _hasName && _hasSport
@@ -1437,9 +1528,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 child: _isLoading
                     ? const CircularProgressIndicator(color: Colors.white)
                     : Text(
-                        widget.requiresApproval
-                            ? "SIŲSTI PARAIŠKĄ"
-                            : "SUKURTI RENGINĮ",
+                        _isEditMode ? 'IŠSAUGOTI PAKEITIMUS' : 'SUKURTI RENGINĮ',
                         style: GoogleFonts.bebasNeue(
                           color: Colors.white,
                           fontSize: 22,
@@ -1995,27 +2084,29 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                     icon: LucideIcons.euro,
                     onChanged: (_) => setState(() {}),
                   ),
-                  if (!isLast)
-                    _buildOptionalDatePicker(
-                      label: 'Galioja iki',
-                      date: tier.validUntil,
-                      onSelect: (d) => setState(() {
-                        tier.validUntil = DateTime(
-                          d.year,
-                          d.month,
-                          d.day,
-                          23,
-                          59,
-                          59,
-                        );
-                      }),
-                      onClear: () => setState(() => tier.validUntil = null),
-                    )
-                  else
+                  _buildOptionalDatePicker(
+                    label: 'Galioja iki',
+                    date: tier.validUntil,
+                    hint: isLast
+                        ? 'Palik tuščią paskutinei pakopai'
+                        : 'Pasirink datą (rekomenduojama)',
+                    onSelect: (d) => setState(() {
+                      tier.validUntil = DateTime(
+                        d.year,
+                        d.month,
+                        d.day,
+                        23,
+                        59,
+                        59,
+                      );
+                    }),
+                    onClear: () => setState(() => tier.validUntil = null),
+                  ),
+                  if (isLast)
                     Padding(
-                      padding: const EdgeInsets.only(top: 4),
+                      padding: const EdgeInsets.only(bottom: 4),
                       child: Text(
-                        'Paskutinė pakopa — galioja visada',
+                        'Paskutinė pakopa — palik datą tuščią, kad galėtų visada.',
                         style: TextStyle(
                           color: QortColors.textSecondary.withValues(alpha: 0.8),
                           fontSize: 11,
@@ -2031,7 +2122,21 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             child: OutlinedButton.icon(
               onPressed: () {
                 setState(() {
-                  _pricingTiers.add(_PricingTierDraft(name: 'Early Bird'));
+                  final defaultUntil = DateTime.now().add(const Duration(days: 14));
+                  final newTier = _PricingTierDraft(name: 'Early Bird', priceText: '15')
+                    ..validUntil = DateTime(
+                      defaultUntil.year,
+                      defaultUntil.month,
+                      defaultUntil.day,
+                      23,
+                      59,
+                      59,
+                    );
+                  if (_pricingTiers.length <= 1) {
+                    _pricingTiers.insert(0, newTier);
+                  } else {
+                    _pricingTiers.insert(_pricingTiers.length - 1, newTier);
+                  }
                 });
               },
               icon: const Icon(LucideIcons.plus, size: 18),
@@ -2054,9 +2159,20 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       onTap: () async {
         final picked = await showDatePicker(
           context: context,
-          initialDate: date ?? DateTime.now().add(const Duration(days: 7)),
+          initialDate: date ?? DateTime.now().add(const Duration(days: 14)),
           firstDate: DateTime.now(),
-          lastDate: DateTime.now().add(const Duration(days: 730)),
+          lastDate: DateTime.now().add(const Duration(days: 365)),
+          builder: (context, child) {
+            return Theme(
+              data: ThemeData.dark().copyWith(
+                colorScheme: const ColorScheme.dark(
+                  primary: Color(0xFFEAB308),
+                  surface: Color(0xFF1A1A1A),
+                ),
+              ),
+              child: child!,
+            );
+          },
         );
         if (picked != null) onSelect(picked);
       },
