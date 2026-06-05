@@ -82,30 +82,138 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     return PricingTierService.currentPrice(_pricingTiers);
   }
 
-  String _formatTierUntil(DateTime d) {
-    return '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}';
+  DateTime? _parseEventDate(dynamic raw) {
+    if (raw == null) return null;
+    try {
+      return DateTime.parse(raw.toString()).toLocal();
+    } catch (_) {
+      return null;
+    }
   }
 
-  String _buildPriceText(List<PricingTier> tiers) {
-    if (tiers.isEmpty) return 'Kaina nenurodyta';
+  String _formatFullDate(DateTime d) {
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
 
-    if (tiers.length == 1) {
-      final p = tiers.first.price;
-      if (p <= 0) return 'Nemokama';
-      return '${p.toStringAsFixed(0)} €';
+  bool _isSameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  String _formatDateRange(DateTime? start, DateTime? end) {
+    if (start == null) return '—';
+    if (end == null || _isSameDay(start, end)) {
+      return _formatFullDate(start);
+    }
+    return '${_formatFullDate(start)} → ${_formatFullDate(end)}';
+  }
+
+  String _formatTierFullLabel(PricingTier tier) {
+    final price = tier.price.toStringAsFixed(0);
+
+    if (tier.validUntil == null) {
+      return '${tier.name}: $price€';
     }
 
-    final sorted = [...tiers]
-      ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
-    final parts = <String>[];
-    for (final tier in sorted) {
-      var part = '${tier.name}: ${tier.price.toStringAsFixed(0)} €';
-      if (tier.validUntil != null) {
-        part += ' (iki ${_formatTierUntil(tier.validUntil!)})';
-      }
-      parts.add(part);
+    final d = tier.validUntil!;
+    final dateStr =
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    return '${tier.name}: $price€ (iki $dateStr)';
+  }
+
+  bool _isTierActive(PricingTier tier, PricingTier? effectiveTier) {
+    if (effectiveTier == null) return false;
+    return tier.id.isNotEmpty
+        ? tier.id == effectiveTier.id
+        : tier.displayOrder == effectiveTier.displayOrder &&
+            tier.name == effectiveTier.name;
+  }
+
+  Widget _buildPricingSection() {
+    if (_pricingTiers.isEmpty) {
+      return _infoRow(
+        icon: LucideIcons.banknote,
+        text: 'Kaina nenurodyta',
+      );
     }
-    return parts.join(' · ');
+
+    final now = DateTime.now();
+    final visibleTiers = _pricingTiers
+        .where((t) => t.validUntil == null || t.validUntil!.isAfter(now))
+        .toList();
+
+    if (visibleTiers.isEmpty) {
+      return _infoRow(
+        icon: LucideIcons.banknote,
+        text: 'Registracija uždaryta',
+      );
+    }
+
+    visibleTiers.sort((a, b) {
+      if (a.validUntil == null) return 1;
+      if (b.validUntil == null) return -1;
+      return a.validUntil!.compareTo(b.validUntil!);
+    });
+
+    final effectiveTier = PricingTierService.getEffectiveTier(visibleTiers);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Row(
+          children: [
+            Icon(LucideIcons.banknote, color: Color(0xFFEAB308), size: 18),
+            SizedBox(width: 10),
+            Text(
+              'KAINOS:',
+              style: TextStyle(
+                color: Color(0xFFEAB308),
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Padding(
+          padding: const EdgeInsets.only(left: 28),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: visibleTiers.map((tier) {
+              final isActive = _isTierActive(tier, effectiveTier);
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    Icon(
+                      isActive
+                          ? LucideIcons.flame
+                          : (tier.validUntil != null
+                              ? LucideIcons.clock
+                              : LucideIcons.banknote),
+                      color: isActive ? Colors.green : Colors.white54,
+                      size: 14,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _formatTierFullLabel(tier),
+                        style: TextStyle(
+                          color: isActive ? Colors.green : Colors.white70,
+                          fontSize: 14,
+                          fontWeight:
+                              isActive ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
   }
 
   DateTime? _parseDeadline(dynamic deadline) {
@@ -125,27 +233,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     return daysLeft >= 0 && daysLeft <= 7;
   }
 
-  String _buildDeadlineText(dynamic deadline) {
-    final dt = _parseDeadline(deadline);
-    if (dt == null) return 'Registracija atvira';
-
-    final now = DateTime.now();
-    final daysLeft = dt.difference(now).inDays;
-    final dateStr =
-        '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}';
-
-    if (daysLeft < 0) {
-      return 'Registracija uždaryta ($dateStr)';
-    }
-    if (daysLeft == 0) {
-      return 'Registracija: paskutinė diena!';
-    }
-    if (daysLeft <= 7) {
-      return 'Registracija: iki $dateStr (liko $daysLeft d.)';
-    }
-    return 'Registracija: iki $dateStr';
-  }
-
   (EventSponsor?, List<EventSponsor>) _sponsorsForPreview() {
     final mainList = _eventSponsors.where((s) => s.isMain).toList();
     final EventSponsor? main = mainList.isNotEmpty ? mainList.first : null;
@@ -160,7 +247,9 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
       final eventId = widget.event['id'];
       final fresh = await client
           .from('events')
-          .select('*, tournaments(*), event_sponsors(*), pricing_tiers(*)')
+          .select(
+            '*, tournaments(*, tournament_participants(count)), event_sponsors(*), pricing_tiers(*)',
+          )
           .eq('id', eventId)
           .single();
 
@@ -301,18 +390,16 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
           _infoRow(
             icon: LucideIcons.calendar,
             text:
-                'Data: ${_formatDate(e['start_date'])} → ${_formatDate(e['end_date'])}',
+                'Datos: ${_formatDateRange(_parseEventDate(e['start_date']), _parseEventDate(e['end_date']))}',
           ),
           const SizedBox(height: 12),
-          _infoRow(
-            icon: LucideIcons.banknote,
-            text: _buildPriceText(_pricingTiers),
-          ),
+          _buildPricingSection(),
           if (e['registration_deadline'] != null) ...[
             const SizedBox(height: 12),
             _infoRow(
               icon: LucideIcons.clock,
-              text: _buildDeadlineText(e['registration_deadline']),
+              text:
+                  'Registracija iki: ${_formatDate(e['registration_deadline'])}',
               textColor: _isDeadlineUrgent(e['registration_deadline'])
                   ? Colors.redAccent
                   : null,
@@ -343,6 +430,124 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  int _divisionParticipantCount(Map<String, dynamic> tournament) {
+    final participants =
+        (tournament['tournament_participants'] as List?) ?? [];
+    if (participants.isEmpty) return 0;
+    final first = participants.first;
+    if (first is Map) {
+      return (first['count'] as num?)?.toInt() ?? 0;
+    }
+    return 0;
+  }
+
+  Widget _buildDivisionCard({
+    required Map<String, dynamic> div,
+    required String divName,
+    required int price,
+  }) {
+    final currentCount = _divisionParticipantCount(div);
+    final maxParticipants = (div['max_participants'] as num?)?.toInt() ?? 0;
+    final participantsText = maxParticipants > 0
+        ? '$currentCount / $maxParticipants dalyvių'
+        : '$currentCount dalyvių';
+
+    return GestureDetector(
+      onTap: widget.previewMode
+          ? null
+          : () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => TournamentDetailScreen(
+                    tournament: div,
+                  ),
+                ),
+              );
+            },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 15),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: QortColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: QortModeColors.competition.withValues(alpha: 0.5),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: QortModeColors.competition.withValues(alpha: 0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    divName.toUpperCase(),
+                    style: GoogleFonts.oswald(
+                      color: QortColors.textPrimary,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    "${div['gender_category'] ?? 'Atvira'} • ${div['team_format'] ?? '1v1'}",
+                    style: const TextStyle(
+                      color: QortColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(
+                        LucideIcons.users,
+                        color: Color(0xFFEAB308),
+                        size: 14,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        participantsText,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  price > 0 ? "$price €" : "NEMOKAMA",
+                  style: GoogleFonts.bebasNeue(
+                    color: Colors.greenAccent,
+                    fontSize: 20,
+                  ),
+                ),
+                const Icon(
+                  LucideIcons.chevronRight,
+                  color: QortColors.textSecondary,
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -611,106 +816,30 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                             ),
                           ),
                         ..._divisions.map((div) {
+                          if (div is! Map) {
+                            return const SizedBox.shrink();
+                          }
+                          final divMap = Map<String, dynamic>.from(div);
+
                           String divName =
-                              div['name']?.toString() ?? "Kategorija";
+                              divMap['name']?.toString() ?? 'Kategorija';
                           if (e['name'] != null &&
                               divName.startsWith(e['name'])) {
                             divName = divName
-                                .replaceFirst("${e['name']} - ", "")
+                                .replaceFirst('${e['name']} - ', '')
                                 .trim();
                           }
 
                           final tierPrice = _getEventEntryPrice();
-                          final price = (tierPrice ?? (div['entry_fee'] as num?)?.toDouble() ?? 0).toInt();
+                          final price = (tierPrice ??
+                                  (divMap['entry_fee'] as num?)?.toDouble() ??
+                                  0)
+                              .toInt();
 
-                          return GestureDetector(
-                            onTap: widget.previewMode
-                                ? null
-                                : () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) =>
-                                            TournamentDetailScreen(
-                                          tournament: div,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                            child: Container(
-                              margin: const EdgeInsets.only(bottom: 15),
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
-                                color: QortColors.surface,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: QortModeColors.competition
-                                      .withValues(alpha: 0.5),
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: QortModeColors.competition
-                                        .withValues(alpha: 0.1),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        divName.toUpperCase(),
-                                        style: GoogleFonts.oswald(
-                                          color: QortColors.textPrimary,
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Row(
-                                        children: [
-                                          const Icon(
-                                            LucideIcons.users,
-                                            color: QortModeColors.competition,
-                                            size: 14,
-                                          ),
-                                          const SizedBox(width: 5),
-                                          Text(
-                                            "${div['gender_category'] ?? 'Atvira'} • ${div['team_format'] ?? '1v1'}",
-                                            style: const TextStyle(
-                                              color: QortColors.textSecondary,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text(
-                                        price > 0 ? "$price €" : "NEMOKAMA",
-                                        style: GoogleFonts.bebasNeue(
-                                          color: Colors.greenAccent,
-                                          fontSize: 20,
-                                        ),
-                                      ),
-                                      const Icon(
-                                        LucideIcons.chevronRight,
-                                        color: QortColors.textSecondary,
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
+                          return _buildDivisionCard(
+                            div: divMap,
+                            divName: divName,
+                            price: price,
                           );
                         }),
                         const SizedBox(height: 50),

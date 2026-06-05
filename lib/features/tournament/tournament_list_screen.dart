@@ -496,6 +496,41 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
         mainList.isNotEmpty ? mainList.first : null;
     final extraSponsors = sponsors.where((s) => !s.isMain).toList();
 
+    if (!isParentEvent) {
+      return _buildLegacyEventCard(event);
+    }
+
+    return GestureDetector(
+      onTap: () => _openEventDetail(event),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: QortDesignSystem.space5),
+        decoration: BoxDecoration(
+          color: p.surface,
+          borderRadius: BorderRadius.circular(QortDesignSystem.radiusLg),
+          border: Border.all(color: QortDesignSystem.borderSubtle),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(QortDesignSystem.radiusLg),
+              ),
+              child: _EventComposerCover(event: event),
+            ),
+            TournamentSponsorBand(
+              compact: true,
+              mainSponsor: mainSponsor,
+              extraSponsors: extraSponsors,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLegacyEventCard(Map<String, dynamic> event) {
+    final p = context.qortPalette;
     final startDate = event['start_date'] != null
         ? DateFormat('MM-dd').format(DateTime.parse(event['start_date']))
         : '';
@@ -525,85 +560,74 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
               child: SizedBox(
                 height: 180,
                 width: double.infinity,
-                child: isParentEvent
-                    ? _EventComposerCover(event: event)
-                    : _EventCoverImage(url: event['image_url']?.toString()),
+                child: _EventCoverImage(url: event['image_url']?.toString()),
               ),
             ),
-            if (isParentEvent)
-              TournamentSponsorBand(
-                compact: true,
-                mainSponsor: mainSponsor,
-                extraSponsors: extraSponsors,
-              ),
-            if (!isParentEvent)
-              Padding(
-                padding: const EdgeInsets.all(QortDesignSystem.space5),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            SportIcons.badge(sport, size: 28),
-                            const SizedBox(width: 8),
-                            Text(
-                              sport,
-                              style: QortDesignSystem.micro.copyWith(
-                                color: SportVisualIcon.specFor(sport).primary,
-                                fontWeight: FontWeight.w700,
-                              ),
+            Padding(
+              padding: const EdgeInsets.all(QortDesignSystem.space5),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          SportIcons.badge(sport, size: 28),
+                          const SizedBox(width: 8),
+                          Text(
+                            sport,
+                            style: QortDesignSystem.micro.copyWith(
+                              color: SportVisualIcon.specFor(sport).primary,
+                              fontWeight: FontWeight.w700,
                             ),
-                          ],
-                        ),
-                        Row(
-                          children: [
-                            Icon(
-                              LucideIcons.calendar,
-                              color: p.textSecondary,
-                              size: 14,
-                            ),
-                            const SizedBox(width: 5),
-                            Text(
-                              dateString,
-                              style: QortDesignSystem.caption.copyWith(
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: QortDesignSystem.space3),
-                    Text(
-                      event['name'] ?? 'Renginys',
-                      style: QortDesignSystem.h3,
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(
-                          LucideIcons.mapPin,
-                          color: Colors.blueAccent,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 5),
-                        Expanded(
-                          child: Text(
-                            event['location'] ?? 'Vieta nenustatyta',
-                            style: QortDesignSystem.caption,
-                            overflow: TextOverflow.ellipsis,
                           ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          Icon(
+                            LucideIcons.calendar,
+                            color: p.textSecondary,
+                            size: 14,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            dateString,
+                            style: QortDesignSystem.caption.copyWith(
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: QortDesignSystem.space3),
+                  Text(
+                    event['name'] ?? 'Renginys',
+                    style: QortDesignSystem.h3,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(
+                        LucideIcons.mapPin,
+                        color: Colors.blueAccent,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          event['location'] ?? 'Vieta nenustatyta',
+                          style: QortDesignSystem.caption,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ],
-                    ),
-                  ],
-                ),
-              )
-            else
-              const SizedBox(height: 6),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -897,9 +921,16 @@ class _EventComposerCover extends StatelessWidget {
   }
 
   List<TournamentLevelInfo> _levels() {
+    const levelOrder = {
+      'LIGHT': 1,
+      'MIDDLE': 2,
+      'HARD': 3,
+      'PRO': 4,
+      'ELITE': 5,
+    };
     final evName = event['name']?.toString() ?? '';
     final list = (event['tournaments'] as List?) ?? const [];
-    return list.whereType<Map>().map((t) {
+    final levels = list.whereType<Map>().map((t) {
       final tName = t['name']?.toString() ?? '';
       final level = TournamentLevelInfo.stripEventPrefix(
         tournamentName: tName,
@@ -913,6 +944,13 @@ class _EventComposerCover extends StatelessWidget {
         maxRp: (t['max_rp'] as num?)?.toInt() ?? 3000,
       );
     }).toList();
+
+    levels.sort((a, b) {
+      final pa = levelOrder[a.levelName.toUpperCase().trim()] ?? 99;
+      final pb = levelOrder[b.levelName.toUpperCase().trim()] ?? 99;
+      return pa.compareTo(pb);
+    });
+    return levels;
   }
 
   @override
@@ -922,6 +960,7 @@ class _EventComposerCover extends StatelessWidget {
     );
     return TournamentComposerWidget(
       compact: true,
+      headerOnly: false,
       imageUrl: event['image_url']?.toString(),
       flipHorizontal: event['image_flip_horizontal'] == true,
       colorFilterPreset: event['cover_filter_preset']?.toString(),
@@ -931,6 +970,10 @@ class _EventComposerCover extends StatelessWidget {
       startDate: _parseDate(event['start_date']),
       endDate: _parseDate(event['end_date']),
       pricingTiers: tiers,
+      organizerName: event['organizer']?.toString(),
+      registrationDeadline: _parseDate(event['registration_deadline']),
+      participantsCount:
+          TournamentComposerWidget.resolveParticipantsCount(event),
       levels: _levels(),
     );
   }

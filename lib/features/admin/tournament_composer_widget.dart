@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:lucide_icons/lucide_icons.dart';
 
 import '../../core/services/event_sponsor_service.dart';
 import '../../core/services/pricing_tier_service.dart';
@@ -24,6 +25,8 @@ class TournamentComposerWidget extends StatelessWidget {
   final List<PricingTier>? pricingTiers;
   final String? description;
   final String? organizerName;
+  final DateTime? registrationDeadline;
+  final int? participantsCount;
   final List<TournamentLevelInfo> levels;
   final EventSponsor? mainSponsor;
   final List<EventSponsor> extraSponsors;
@@ -46,6 +49,8 @@ class TournamentComposerWidget extends StatelessWidget {
     this.pricingTiers,
     this.description,
     this.organizerName,
+    this.registrationDeadline,
+    this.participantsCount,
     this.levels = const [],
     this.mainSponsor,
     this.extraSponsors = const [],
@@ -57,8 +62,10 @@ class TournamentComposerWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Sąraše (compact): aspectRatio = width/height — platus stačiakampis (~16:10).
+    final ratio = compact ? (16 / 10) : (16 / 9);
     return AspectRatio(
-      aspectRatio: 16 / 9,
+      aspectRatio: ratio,
       child: Container(
         decoration: BoxDecoration(
           color: Colors.black,
@@ -75,24 +82,53 @@ class TournamentComposerWidget extends StatelessWidget {
               Positioned(
                 left: 16,
                 right: 16,
-                bottom: 16,
-                child: Text(
-                  eventName.toUpperCase(),
-                  style: GoogleFonts.anton(
-                    color: Colors.white,
-                    fontSize: 32,
-                    letterSpacing: 1.2,
-                    height: 1.0,
-                    shadows: const [
-                      Shadow(
-                        color: Colors.black,
-                        offset: Offset(0, 2),
-                        blurRadius: 8,
+                bottom: compact ? 10 : 16,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      eventName.toUpperCase(),
+                      style: GoogleFonts.anton(
+                        color: Colors.white,
+                        fontSize: compact ? 18 : 32,
+                        letterSpacing: 1.2,
+                        height: 1.0,
+                        shadows: const [
+                          Shadow(
+                            color: Colors.black,
+                            offset: Offset(0, 2),
+                            blurRadius: 8,
+                          ),
+                        ],
+                      ),
+                      maxLines: compact ? 2 : 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (compact) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        [
+                          sport,
+                          if (location != null && location!.trim().isNotEmpty)
+                            location!.trim(),
+                        ].join(' · '),
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontSize: 11,
+                          shadows: const [
+                            Shadow(
+                              color: Colors.black,
+                              offset: Offset(0, 1),
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
-                  ),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
+                  ],
                 ),
               )
             else
@@ -179,7 +215,9 @@ class TournamentComposerWidget extends StatelessWidget {
       'QORT',
       style: TextStyle(
         fontFamily: 'Anton',
-        fontSize: headerOnly ? 32 : (compact ? 20 : 32),
+        fontSize: (headerOnly && compact)
+            ? 20
+            : (headerOnly ? 32 : (compact ? 20 : 32)),
         color: const Color(0xFFEAB308),
         letterSpacing: 2,
         height: 1,
@@ -196,45 +234,7 @@ class TournamentComposerWidget extends StatelessWidget {
 
   Widget _buildOverlayContent() {
     if (compact) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            eventName.toUpperCase(),
-            style: GoogleFonts.anton(
-              color: Colors.white,
-              fontSize: 18,
-              letterSpacing: 1.2,
-              height: 1.0,
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            [
-              sport,
-              if (location != null && location!.trim().isNotEmpty)
-                location!.trim(),
-            ].join(' · '),
-            style: const TextStyle(
-              color: Color(0xFFEAB308),
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 8),
-          _buildMetaRow(),
-          _buildPriceSection(),
-          if (levels.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            _buildLevelChips(),
-          ],
-        ],
-      );
+      return _buildCompactOverlayContent();
     }
 
     return FittedBox(
@@ -309,6 +309,214 @@ class TournamentComposerWidget extends StatelessWidget {
     );
   }
 
+  Widget _buildCompactOverlayContent() {
+    final dateText = _formatDateRange(startDate, endDate);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          eventName.toUpperCase(),
+          style: GoogleFonts.anton(
+            color: Colors.white,
+            fontSize: 18,
+            letterSpacing: 1.2,
+            height: 1.0,
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          [
+            sport,
+            if (location != null && location!.trim().isNotEmpty)
+              location!.trim(),
+          ].join(' · '),
+          style: const TextStyle(
+            color: Color(0xFFEAB308),
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        if (dateText.isNotEmpty)
+          _compactInfoRow(icon: LucideIcons.calendar, text: dateText),
+        if (registrationDeadline != null)
+          _compactInfoRow(
+            icon: LucideIcons.clock,
+            text: 'Registracija iki ${_formatDate(registrationDeadline)}',
+          ),
+        _buildCompactPricingRows(),
+        if (organizerName != null && organizerName!.trim().isNotEmpty)
+          _compactInfoRow(
+            icon: LucideIcons.user,
+            text: organizerName!.trim(),
+          ),
+        _compactInfoRow(
+          icon: LucideIcons.users,
+          text: '${participantsCount ?? 0} dalyvių',
+        ),
+        if (levels.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          _buildLevelChips(),
+        ],
+      ],
+    );
+  }
+
+  Widget _compactInfoRow({
+    required IconData icon,
+    required String text,
+    Color? iconColor,
+    Color? textColor,
+    FontWeight? fontWeight,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: [
+          Icon(
+            icon,
+            color: iconColor ?? const Color(0xFFEAB308),
+            size: 12,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: textColor ?? Colors.white70,
+                fontSize: 11,
+                fontWeight: fontWeight,
+              ),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactPricingRows() {
+    final visibleTiers = _displayTiers();
+    if (visibleTiers.isEmpty) return const SizedBox.shrink();
+
+    final effectiveTier = PricingTierService.getEffectiveTier(visibleTiers);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: visibleTiers.map((tier) {
+        final isActive = effectiveTier != null &&
+            (tier.id.isNotEmpty
+                ? tier.id == effectiveTier.id
+                : tier.displayOrder == effectiveTier.displayOrder &&
+                    tier.name == effectiveTier.name);
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 3),
+          child: Row(
+            children: [
+              Icon(
+                isActive
+                    ? LucideIcons.flame
+                    : (tier.validUntil != null
+                        ? LucideIcons.clock
+                        : LucideIcons.banknote),
+                color: isActive ? Colors.green : Colors.white54,
+                size: 12,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  _formatTierLabel(tier),
+                  style: TextStyle(
+                    color: isActive ? Colors.green : Colors.white54,
+                    fontSize: 11,
+                    fontWeight:
+                        isActive ? FontWeight.bold : FontWeight.normal,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  String _formatDateRange(DateTime? start, DateTime? end) {
+    if (start == null) return '';
+
+    final startStr = _formatDate(start);
+
+    if (end == null || _isSameDay(start, end)) {
+      return startStr;
+    }
+
+    return '$startStr → ${_formatDate(end)}';
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  String _formatDate(dynamic raw) {
+    if (raw is DateTime) {
+      return '${raw.year}-${raw.month.toString().padLeft(2, '0')}-${raw.day.toString().padLeft(2, '0')}';
+    }
+    final dt = DateTime.tryParse(raw.toString());
+    if (dt == null) return '';
+    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+  }
+
+  String _formatTierLabel(PricingTier tier) {
+    final price = tier.price.toStringAsFixed(0);
+
+    if (tier.validUntil == null) {
+      return '${tier.name}: $price€';
+    }
+
+    final daysLeft = tier.validUntil!.difference(DateTime.now()).inDays;
+
+    final String dayText;
+    if (daysLeft <= 0) {
+      dayText = 'paskutinė diena!';
+    } else if (daysLeft == 1) {
+      dayText = 'liko 1 d.';
+    } else {
+      dayText = 'liko $daysLeft d.';
+    }
+
+    return '${tier.name}: $price€ ($dayText)';
+  }
+
+  /// Dalyvių skaičius iš event lygio arba sumuojant per turnyrus.
+  static int resolveParticipantsCount(Map<String, dynamic> event) {
+    final eventCount = (event['participants_count'] as num?)?.toInt();
+    if (eventCount != null) return eventCount;
+
+    var total = 0;
+    final tournaments = event['tournaments'] as List? ?? [];
+    for (final t in tournaments) {
+      if (t is! Map) continue;
+      final tpList = t['tournament_participants'] as List? ?? [];
+      if (tpList.isNotEmpty) {
+        final first = tpList.first;
+        if (first is Map) {
+          total += (first['count'] as num?)?.toInt() ?? 0;
+        }
+      }
+    }
+    return total;
+  }
+
   List<PricingTier> _effectiveTiers() {
     if (pricingTiers != null) {
       return pricingTiers!;
@@ -355,7 +563,9 @@ class TournamentComposerWidget extends StatelessWidget {
   }
 
   Widget _buildPriceSection() {
-    final tiers = _effectiveTiers();
+    if (compact) return const SizedBox.shrink();
+
+    final tiers = _displayTiers();
     if (tiers.length <= 1) return const SizedBox.shrink();
 
     final fontSize = compact ? 10.0 : 12.0;
@@ -378,9 +588,28 @@ class TournamentComposerWidget extends StatelessWidget {
     );
   }
 
+  /// Compact sąraše — nerodyti pasibaigusių pakopų; su validUntil pirma.
+  List<PricingTier> _displayTiers() {
+    final tiers = _effectiveTiers();
+    if (!compact) return tiers;
+
+    final now = DateTime.now();
+    final visible = tiers
+        .where((t) => t.validUntil == null || t.validUntil!.isAfter(now))
+        .toList();
+
+    visible.sort((a, b) {
+      if (a.validUntil == null) return 1;
+      if (b.validUntil == null) return -1;
+      return a.validUntil!.compareTo(b.validUntil!);
+    });
+
+    return visible;
+  }
+
   Widget _buildLevelChips() {
     if (compact) {
-      final visibleLevels = levels.take(6).toList();
+      final visibleLevels = levels.take(2).toList();
       final hiddenCount = levels.length - visibleLevels.length;
 
       return Wrap(
