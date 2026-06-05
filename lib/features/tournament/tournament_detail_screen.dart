@@ -291,21 +291,16 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
     );
   }
 
-  Widget _buildRulesAcknowledgmentSection() {
+  Widget _buildRulesSection() {
     final rules = _eventRules ?? '';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: _rulesAcknowledged
-              ? QortModeColors.competition
-              : Colors.white12,
-          width: _rulesAcknowledged ? 1.5 : 1,
-        ),
+        border: Border.all(color: Colors.white12),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -330,55 +325,6 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
           ),
           const SizedBox(height: 12),
           _buildRulesPreview(rules),
-          if (_hasEventRules) ...[
-            const SizedBox(height: 16),
-            InkWell(
-              onTap: () => setState(() => _rulesAcknowledged = !_rulesAcknowledged),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: _rulesAcknowledged
-                      ? QortModeColors.competition.withValues(alpha: 0.1)
-                      : null,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: _rulesAcknowledged
-                        ? QortModeColors.competition
-                        : Colors.white24,
-                    width: _rulesAcknowledged ? 2 : 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      _rulesAcknowledged
-                          ? Icons.check_box
-                          : Icons.check_box_outline_blank,
-                      color: _rulesAcknowledged
-                          ? QortModeColors.competition
-                          : Colors.white54,
-                      size: 22,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Susipažinau su turnyro taisyklėmis ir sutinku jų laikytis',
-                        style: TextStyle(
-                          color: _rulesAcknowledged
-                              ? Colors.white
-                              : Colors.white70,
-                          fontSize: 13,
-                          fontWeight: _rulesAcknowledged
-                              ? FontWeight.w600
-                              : FontWeight.normal,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -420,34 +366,36 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
     if (!_hasEventRules) {
       label = 'TAISYKLĖS NENURODYTOS — REGISTRACIJA NEGALIMA';
     } else if (!_rulesAcknowledged) {
-      label = 'PATVIRTINK TAISYKLES, KAD GALĖTUM REGISTRUOTIS';
+      label = 'PATVIRTINK TAISYKLES, KAD REGISTRUOTUM';
     } else if (isTeam) {
       label = 'REGISTRUOTI KOMANDĄ$priceSuffix ($rpValue RP)';
     } else {
       label = 'REGISTRUOTIS$priceSuffix (Kovoti dėl $rpValue RP)';
     }
 
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: canPress
-            ? QortModeColors.competition
-            : Colors.grey,
-        foregroundColor: canPress ? QortColors.textPrimary : Colors.white38,
-        disabledBackgroundColor: Colors.white12,
-        disabledForegroundColor: Colors.white38,
-        minimumSize: const Size(double.infinity, 50),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor:
+              canPress ? const Color(0xFFEAB308) : Colors.white12,
+          foregroundColor: canPress ? Colors.black : Colors.white38,
+          disabledBackgroundColor: Colors.white12,
+          disabledForegroundColor: Colors.white38,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
-      ),
-      onPressed: canPress ? _showDivisionSelection : null,
-      child: Text(
-        label,
-        textAlign: TextAlign.center,
-        style: GoogleFonts.bebasNeue(
-          fontSize: 14,
-          letterSpacing: 1,
-          color: canPress ? QortColors.textPrimary : Colors.white38,
+        onPressed: canPress ? _showDivisionSelection : null,
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontFamily: 'Anton',
+            fontSize: 13,
+            letterSpacing: 1.2,
+          ),
         ),
       ),
     );
@@ -1353,19 +1301,57 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
             color: QortColors.surface,
             border: Border(top: BorderSide(color: QortColors.border)),
           ),
-          padding: const EdgeInsets.all(16),
           child: _isLoading
-              ? const SizedBox(
-                  height: 50,
-                  child: Center(child: CircularProgressIndicator()),
+              ? const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: SizedBox(
+                    height: 50,
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
                 )
-              : Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (!_isParticipating) _buildRulesAcknowledgmentSection(),
-                    _buildRegistrationBarButton(rpValue),
-                  ],
+              : Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (!_isParticipating) ...[
+                        InkWell(
+                          onTap: () => setState(
+                            () => _rulesAcknowledged = !_rulesAcknowledged,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _rulesAcknowledged
+                                      ? Icons.check_box
+                                      : Icons.check_box_outline_blank,
+                                  color: _rulesAcknowledged
+                                      ? const Color(0xFFEAB308)
+                                      : Colors.white54,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    'Susipažinau su turnyro taisyklėmis',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      _buildRegistrationBarButton(rpValue),
+                    ],
+                  ),
                 ),
         ),
       ),
@@ -1454,14 +1440,14 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
     String endDate = "Nenurodyta";
     try {
       if (t['start_date'] != null) {
-        startDate = DateFormat(
-          'yyyy-MM-dd HH:mm',
-        ).format(DateTime.parse(t['start_date']));
+        startDate = DateFormat('yyyy-MM-dd').format(
+          DateTime.parse(t['start_date']),
+        );
       }
       if (t['end_date'] != null) {
-        endDate = DateFormat(
-          'yyyy-MM-dd HH:mm',
-        ).format(DateTime.parse(t['end_date']));
+        endDate = DateFormat('yyyy-MM-dd').format(
+          DateTime.parse(t['end_date']),
+        );
       }
     } catch (_) {}
 
@@ -1472,7 +1458,12 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
     final coverUrl = t['image_url']?.toString();
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: 100,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1819,23 +1810,9 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
             style: const TextStyle(color: QortColors.textSecondary, height: 1.5),
           ),
 
-          const SizedBox(height: 30),
-
-          Text(
-            "TAISYKLĖS IR SĄLYGOS",
-            style: GoogleFonts.bebasNeue(color: QortColors.textPrimary, fontSize: 22,
-              letterSpacing: 1,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            t['rules']?.toString().isNotEmpty == true
-                ? t['rules']
-                : "Nėra specialių taisyklių.",
-            style: const TextStyle(color: QortColors.textSecondary, height: 1.5),
-          ),
-
-          const SizedBox(height: 50),
+          const SizedBox(height: 16),
+          _buildRulesSection(),
+          const SizedBox(height: 16),
         ],
       ),
     );
@@ -1860,14 +1837,27 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
   }
 
   Widget _infoRowWidget(IconData icon, String label, Widget value) {
-    return Row(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: QortModeColors.competition, size: 20),
-        const SizedBox(width: 15),
-        Text(label, style: const TextStyle(color: QortColors.textSecondary, fontSize: 14)),
-        const Spacer(),
-        Flexible(child: value),
+        Row(
+          children: [
+            Icon(icon, color: QortModeColors.competition, size: 20),
+            const SizedBox(width: 15),
+            Text(
+              label,
+              style: const TextStyle(
+                color: QortColors.textSecondary,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.only(left: 35),
+          child: value,
+        ),
       ],
     );
   }
