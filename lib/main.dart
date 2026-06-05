@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 import 'core/config/supabase_config.dart';
 import 'core/theme/qort_theme.dart';
@@ -23,6 +24,7 @@ Future<void> main() async {
   }
 
   await QortTypography.preload();
+  await initializeDateFormatting('lt_LT', null);
 
   await Supabase.initialize(
     url: SupabaseConfig.url,

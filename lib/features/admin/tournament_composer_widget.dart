@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/services/event_sponsor_service.dart';
+import '../../core/services/pricing_tier_service.dart';
+import '../../core/widgets/pricing_tier_display.dart';
 import '../../core/widgets/tournament_cover_color_filters.dart';
 
 /// 16:9 turnyro plakato peržiūra su QORT overlay (logo + info).
@@ -19,6 +21,7 @@ class TournamentComposerWidget extends StatelessWidget {
   final DateTime? startDate;
   final DateTime? endDate;
   final double? price;
+  final List<PricingTier>? pricingTiers;
   final String? description;
   final String? organizerName;
   final List<TournamentLevelInfo> levels;
@@ -40,6 +43,7 @@ class TournamentComposerWidget extends StatelessWidget {
     this.startDate,
     this.endDate,
     this.price,
+    this.pricingTiers,
     this.description,
     this.organizerName,
     this.levels = const [],
@@ -224,6 +228,7 @@ class TournamentComposerWidget extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           _buildMetaRow(),
+          _buildPriceSection(),
           if (levels.isNotEmpty) ...[
             const SizedBox(height: 10),
             _buildLevelChips(),
@@ -281,6 +286,7 @@ class TournamentComposerWidget extends StatelessWidget {
           ],
           const SizedBox(height: 8),
           _buildMetaRow(),
+          _buildPriceSection(),
           if (levels.isNotEmpty) ...[
             const SizedBox(height: 10),
             _buildLevelChips(),
@@ -303,6 +309,24 @@ class TournamentComposerWidget extends StatelessWidget {
     );
   }
 
+  List<PricingTier> _effectiveTiers() {
+    if (pricingTiers != null) {
+      return pricingTiers!;
+    }
+    if (price != null && price! > 0) {
+      return [
+        PricingTier(
+          id: '',
+          eventId: '',
+          name: 'Įprasta',
+          price: price!,
+          displayOrder: 0,
+        ),
+      ];
+    }
+    return [];
+  }
+
   Widget _buildMetaRow() {
     final parts = <String>[];
     if (startDate != null && endDate != null) {
@@ -310,7 +334,11 @@ class TournamentComposerWidget extends StatelessWidget {
     } else if (startDate != null) {
       parts.add(_fmt(startDate!));
     }
-    if (price != null && price! > 0) {
+    final tiers = _effectiveTiers();
+    final effective = PricingTierService.getEffectiveTier(tiers);
+    if (effective != null && effective.price > 0) {
+      parts.add('${effective.price.toStringAsFixed(0)}€');
+    } else if (price != null && price! > 0) {
       parts.add('${price!.toStringAsFixed(0)}€');
     }
     if (parts.isEmpty) return const SizedBox.shrink();
@@ -323,6 +351,30 @@ class TournamentComposerWidget extends StatelessWidget {
       ),
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
+    );
+  }
+
+  Widget _buildPriceSection() {
+    final tiers = _effectiveTiers();
+    if (tiers.length <= 1) return const SizedBox.shrink();
+
+    final fontSize = compact ? 10.0 : 12.0;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: PricingTierDisplay(
+          tiers: tiers,
+          compact: false,
+          onDarkBackground: true,
+          baseStyle: TextStyle(
+            color: Colors.white,
+            fontSize: fontSize,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
     );
   }
 

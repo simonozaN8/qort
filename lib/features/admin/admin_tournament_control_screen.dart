@@ -15,7 +15,9 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants/query_limits.dart';
 import '../../core/services/event_sponsor_service.dart';
+import '../../core/services/pricing_tier_service.dart';
 import '../../core/utils/datetime_utils.dart';
+import '../../core/widgets/pricing_tier_display.dart' show formatPricingTierDate;
 import 'package:intl/intl.dart';
 import '../tournament/tournament_detail_screen.dart';
 import '../tournament/tournament_engine.dart';
@@ -65,6 +67,8 @@ class _AdminTournamentControlScreenState
   bool _pendingCoverTransforms = false;
   List<EventSponsor> _eventSponsors = [];
   bool _loadingSponsors = false;
+  List<PricingTier> _pricingTiers = [];
+  DateTime? _registrationDeadline;
 
   String _venueType = "Aikštelė";
   List<String> _venueTypes = [];
@@ -361,7 +365,7 @@ class _AdminTournamentControlScreenState
               width: 28,
               child: Text(
                 branch,
-                style: TextStyle(
+                style: const TextStyle(
                   color: QortDesignSystem.textMuted,
                   fontSize: 13,
                   height: 1.35,
@@ -395,8 +399,8 @@ class _AdminTournamentControlScreenState
               ),
             ),
             if (target == null)
-              Padding(
-                padding: const EdgeInsets.only(left: 6),
+              const Padding(
+                padding: EdgeInsets.only(left: 6),
                 child: Icon(
                   LucideIcons.alertTriangle,
                   size: 14,
@@ -825,13 +829,24 @@ class _AdminTournamentControlScreenState
         try {
           final ev = await client
               .from('events')
-              .select('organizer, organizer_email, organizer_phone')
+              .select(
+                'organizer, organizer_email, organizer_phone, registration_deadline',
+              )
               .eq('id', eventId)
               .maybeSingle();
           if (ev != null) {
             _organizerCtrl.text = ev['organizer']?.toString() ?? '';
             _organizerEmailCtrl.text = ev['organizer_email']?.toString() ?? '';
             _organizerPhoneCtrl.text = ev['organizer_phone']?.toString() ?? '';
+            final rd = ev['registration_deadline'];
+            _registrationDeadline = rd != null
+                ? DateTimeUtils.fromIso(rd.toString())
+                : null;
+          }
+          try {
+            _pricingTiers = await PricingTierService.listByEvent(eventId);
+          } catch (_) {
+            _pricingTiers = [];
           }
         } catch (_) {}
       }
@@ -2143,7 +2158,7 @@ class _AdminTournamentControlScreenState
                   Expanded(
                     flex: 2,
                     child: DropdownButtonFormField<String>(
-                      value: groups.contains(selected) ? selected : groups.first,
+                      initialValue: groups.contains(selected) ? selected : groups.first,
                       dropdownColor: const Color(0xFF1E293B),
                       style: const TextStyle(
                         color: QortColors.textPrimary,
@@ -2234,7 +2249,12 @@ class _AdminTournamentControlScreenState
       location: t['location']?.toString(),
       startDate: _parseTournamentDate(t['start_date']),
       endDate: _parseTournamentDate(t['end_date']),
-      price: (t['entry_fee'] as num?)?.toDouble(),
+      pricingTiers: _pricingTiers.isNotEmpty
+          ? _pricingTiers
+          : null,
+      price: _pricingTiers.isEmpty
+          ? (t['entry_fee'] as num?)?.toDouble()
+          : null,
       levels: const [],
       description: null,
       organizerName: null,
@@ -2457,6 +2477,557 @@ class _AdminTournamentControlScreenState
     await _loadData();
   }
 
+  String? get _eventId => widget.tournament['event_id']?.toString();
+
+  bool _isLastTier(PricingTier tier) {
+    if (_pricingTiers.isEmpty) return true;
+    final maxOrder = _pricingTiers
+        .map((t) => t.displayOrder)
+        .reduce((a, b) => a > b ? a : b);
+    return tier.displayOrder == maxOrder;
+  }
+
+  Future<void> _createDefaultTierFromEntryFee() async {
+    final eventId = _eventId;
+    if (eventId == null || eventId.isEmpty) return;
+    final fee = (widget.tournament['entry_fee'] as num?)?.toDouble() ?? 0;
+    try {
+      await PricingTierService.add(
+        eventId: eventId,
+        name: 'Įprasta',
+        price: fee,
+        displayOrder: 0,
+      );
+      await _reloadPricingTiers();
+    } catch (e) {
+      _showError('Nepavyko sukurti pakopos: $e');
+    }
+  }
+
+  Future<void> _reloadPricingTiers() async {
+    final eventId = _eventId;
+    if (eventId == null || eventId.isEmpty) return;
+    try {
+      final tiers = await PricingTierService.listByEvent(eventId);
+      final ev = await Supabase.instance.client
+          .from('events')
+          .select('registration_deadline')
+          .eq('id', eventId)
+          .maybeSingle();
+      if (mounted) {
+        setState(() {
+          _pricingTiers = tiers;
+          if (ev != null && ev['registration_deadline'] != null) {
+            _registrationDeadline =
+                DateTimeUtils.fromIso(ev['registration_deadline'].toString());
+          }
+        });
+      }
+      await _syncEntryFeeFromTiers();
+    } catch (e) {
+      _showError('Klaida kraunant kainas: $e');
+    }
+  }
+
+  Future<void> _syncEntryFeeFromTiers() async {
+    final eventId = _eventId;
+    if (eventId == null || eventId.isEmpty || _pricingTiers.isEmpty) return;
+    final sorted = [..._pricingTiers]
+      ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
+    final effectivePrice =
+        PricingTierService.getEffectiveTier(sorted)?.price ?? sorted.first.price;
+    await Supabase.instance.client
+        .from('tournaments')
+        .update({'entry_fee': effectivePrice})
+        .eq('event_id', eventId);
+    if (mounted) {
+      setState(() {
+        widget.tournament['entry_fee'] = effectivePrice;
+      });
+    }
+  }
+
+  Future<void> _extendTierByDays(PricingTier tier, int days) async {
+    final base = tier.validUntil != null &&
+            tier.validUntil!.isAfter(DateTime.now())
+        ? tier.validUntil!
+        : DateTime.now();
+    final newUntil = DateTime(
+      base.year,
+      base.month,
+      base.day,
+      23,
+      59,
+      59,
+    ).add(Duration(days: days));
+    try {
+      await PricingTierService.update(id: tier.id, validUntil: newUntil);
+      await _reloadPricingTiers();
+    } catch (e) {
+      _showError('Nepavyko pratęsti: $e');
+    }
+  }
+
+  Future<void> _extendRegistrationByWeek() async {
+    final eventId = _eventId;
+    if (eventId == null || eventId.isEmpty) return;
+    final base = _registrationDeadline != null &&
+            _registrationDeadline!.isAfter(DateTime.now())
+        ? _registrationDeadline!
+        : DateTime.now();
+    final newDeadline = base.add(const Duration(days: 7));
+    try {
+      await PricingTierService.updateEventRegistrationDeadline(
+        eventId: eventId,
+        deadline: newDeadline,
+      );
+      setState(() => _registrationDeadline = newDeadline);
+    } catch (e) {
+      _showError('Nepavyko pratęsti termino: $e');
+    }
+  }
+
+  Future<void> _editRegistrationDeadline() async {
+    final eventId = _eventId;
+    if (eventId == null || eventId.isEmpty) return;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _registrationDeadline ?? DateTime.now().add(const Duration(days: 14)),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+    );
+    if (picked == null) return;
+    final dt = DateTime(picked.year, picked.month, picked.day, 23, 59, 59);
+    try {
+      await PricingTierService.updateEventRegistrationDeadline(
+        eventId: eventId,
+        deadline: dt,
+      );
+      setState(() => _registrationDeadline = dt);
+    } catch (e) {
+      _showError('Nepavyko išsaugoti: $e');
+    }
+  }
+
+  DateTime _tierValidUntilEndOfDay(DateTime d) {
+    return DateTime(d.year, d.month, d.day, 23, 59, 59);
+  }
+
+  String _formatTierDialogDate(DateTime d) {
+    return '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
+  }
+
+  Future<DateTime?> _pickTierValidUntilDate(
+    BuildContext ctx, {
+    DateTime? initial,
+  }) async {
+    final picked = await showDatePicker(
+      context: ctx,
+      initialDate: initial ?? DateTime.now().add(const Duration(days: 14)),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Color(0xFFEAB308),
+              surface: Color(0xFF1A1A1A),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked == null) return null;
+    return _tierValidUntilEndOfDay(picked);
+  }
+
+  Future<_TierDialogDraft?> _showTierFormDialog({
+    required String title,
+    required String confirmLabel,
+    _TierDialogDraft? initial,
+    bool isLastTier = false,
+  }) async {
+    final draft = initial ?? _TierDialogDraft(name: 'Early Bird', price: 15);
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          Future<void> pickDate() async {
+            final picked = await _pickTierValidUntilDate(
+              ctx,
+              initial: draft.validUntil,
+            );
+            if (picked != null) {
+              setDialogState(() => draft.validUntil = picked);
+            }
+          }
+
+          return AlertDialog(
+            backgroundColor: const Color(0xFF1A1A1A),
+            title: Text(title, style: const TextStyle(color: Colors.white)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: draft.nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Pavadinimas (pvz. Early Bird)',
+                      labelStyle: TextStyle(color: Colors.white70),
+                    ),
+                    style: const TextStyle(color: Colors.white),
+                    onChanged: (val) => draft.name = val,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: draft.priceCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Kaina (€)',
+                      labelStyle: TextStyle(color: Colors.white70),
+                    ),
+                    style: const TextStyle(color: Colors.white),
+                    keyboardType: TextInputType.number,
+                    onChanged: (val) =>
+                        draft.price = double.tryParse(val) ?? 0,
+                  ),
+                  const SizedBox(height: 16),
+                  InkWell(
+                    onTap: pickDate,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 14,
+                      ),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.white24),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.calendar_today,
+                            color: Color(0xFFEAB308),
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              draft.validUntil != null
+                                  ? 'Galioja iki: ${_formatTierDialogDate(draft.validUntil!)}'
+                                  : 'Galioja iki (palik tuščią — paskutinė pakopa)',
+                              style: TextStyle(
+                                color: draft.validUntil != null
+                                    ? Colors.white
+                                    : Colors.white54,
+                              ),
+                            ),
+                          ),
+                          if (draft.validUntil != null)
+                            IconButton(
+                              icon: const Icon(
+                                Icons.clear,
+                                color: Colors.white54,
+                                size: 18,
+                              ),
+                              onPressed: () =>
+                                  setDialogState(() => draft.validUntil = null),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    isLastTier
+                        ? 'Paskutinė pakopa — palik datą tuščią, kad galėtų visada.'
+                        : 'Palik tuščią tik paskutinei pakopai (Įprasta) — ji galios kai visos kitos pasibaigs.',
+                    style: const TextStyle(color: Colors.white54, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Atšaukti'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  draft.name = draft.nameCtrl.text.trim();
+                  draft.price = double.tryParse(draft.priceCtrl.text) ?? 0;
+                  if (draft.name.isEmpty || draft.price <= 0) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(
+                        content: Text('Užpildyk pavadinimą ir kainą'),
+                      ),
+                    );
+                    return;
+                  }
+                  Navigator.pop(ctx, true);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFEAB308),
+                ),
+                child: Text(
+                  confirmLabel,
+                  style: const TextStyle(color: Colors.black),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (saved != true) {
+      draft.dispose();
+      return null;
+    }
+    draft.name = draft.nameCtrl.text.trim();
+    draft.price = double.tryParse(draft.priceCtrl.text) ?? draft.price;
+    return draft;
+  }
+
+  Future<void> _editTier(PricingTier tier) async {
+    final isLast = _isLastTier(tier);
+    final draft = await _showTierFormDialog(
+      title: 'Redaguoti pakopą',
+      confirmLabel: 'Išsaugoti',
+      isLastTier: isLast,
+      initial: _TierDialogDraft(
+        name: tier.name,
+        price: tier.price,
+        validUntil: tier.validUntil,
+      ),
+    );
+    if (draft == null) return;
+
+    try {
+      if (draft.validUntil != null) {
+        await PricingTierService.update(
+          id: tier.id,
+          name: draft.name,
+          price: draft.price,
+          validUntil: draft.validUntil,
+        );
+      } else {
+        await PricingTierService.update(
+          id: tier.id,
+          name: draft.name,
+          price: draft.price,
+          clearValidUntil: true,
+        );
+      }
+      draft.dispose();
+      await _reloadPricingTiers();
+    } catch (e) {
+      draft.dispose();
+      _showError('Nepavyko išsaugoti: $e');
+    }
+  }
+
+  Future<void> _addTier() async {
+    final eventId = _eventId;
+    if (eventId == null || eventId.isEmpty) {
+      _showError('Renginys nerastas (event_id)');
+      return;
+    }
+
+    final draft = await _showTierFormDialog(
+      title: 'Nauja kainos pakopa',
+      confirmLabel: 'Pridėti',
+      isLastTier: false,
+    );
+    if (draft == null) return;
+
+    try {
+      await PricingTierService.add(
+        eventId: eventId,
+        name: draft.name.isEmpty ? 'Pakopa' : draft.name,
+        price: draft.price,
+        displayOrder: _pricingTiers.length,
+        validUntil: draft.validUntil,
+      );
+      draft.dispose();
+      await _reloadPricingTiers();
+    } catch (e) {
+      draft.dispose();
+      _showError('Nepavyko pridėti: $e');
+    }
+  }
+
+  Future<void> _deleteTier(PricingTier tier) async {
+    if (_pricingTiers.length <= 1) {
+      _showError('Bent viena pakopa turi likti.');
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Ištrinti pakopą?'),
+        content: Text('${tier.name} — ${tier.price.toStringAsFixed(0)} €'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Ne')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Ištrinti', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await PricingTierService.remove(tier.id);
+      await _reloadPricingTiers();
+    } catch (e) {
+      _showError('Nepavyko ištrinti: $e');
+    }
+  }
+
+  Widget _buildTierRow(PricingTier tier) {
+    final isLast = _isLastTier(tier);
+
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        tier.isActive()
+            ? Icons.check_circle
+            : tier.isExpired()
+                ? Icons.cancel
+                : Icons.schedule,
+        color: tier.isActive()
+            ? Colors.green
+            : tier.isExpired()
+                ? Colors.grey
+                : const Color(0xFFEAB308),
+      ),
+      title: Text(
+        '${tier.name}: ${tier.price.toStringAsFixed(0)} €',
+        style: const TextStyle(
+          color: QortColors.textPrimary,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      subtitle: tier.validUntil != null
+          ? Text('Iki ${formatPricingTierDate(tier.validUntil!)}')
+          : const Text('Galioja visada (paskutinė)'),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!isLast)
+            IconButton(
+              icon: const Icon(Icons.add_circle, color: Color(0xFFEAB308)),
+              tooltip: 'Pratęsti +7d',
+              onPressed: () => _extendTierByDays(tier, 7),
+            ),
+          IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: () => _editTier(tier),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete, color: Colors.red),
+            onPressed: () => _deleteTier(tier),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPricingSection() {
+    final eventId = _eventId;
+    if (eventId == null || eventId.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: QortColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: QortColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'REGISTRACIJOS VALDYMAS',
+            style: GoogleFonts.oswald(
+              color: QortColors.primary,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'KAINOS PAKOPOS',
+            style: GoogleFonts.oswald(
+              color: QortColors.textSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (_pricingTiers.isEmpty) ...[
+            const Text(
+              'Pakopų nėra — rodoma tournaments.entry_fee.',
+              style: TextStyle(color: QortColors.textSecondary, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: _createDefaultTierFromEntryFee,
+              child: const Text('Sukurti „Įprasta“ pakopą iš dabartinės kainos'),
+            ),
+          ] else
+            ..._pricingTiers.map(_buildTierRow),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _addTier,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('+ Pridėti pakopą'),
+            ),
+          ),
+          const Divider(height: 32),
+          Text(
+            'REGISTRACIJOS TERMINAS',
+            style: GoogleFonts.oswald(
+              color: QortColors.textSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _registrationDeadline != null
+                      ? formatPricingTierDate(_registrationDeadline!)
+                      : 'Nenurodyta (uždaryta pradžioje)',
+                  style: const TextStyle(
+                    color: QortColors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: _extendRegistrationByWeek,
+                child: const Text('Pratęsti +7d'),
+              ),
+              IconButton(
+                icon: const Icon(Icons.edit),
+                onPressed: _editRegistrationDeadline,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSponsorsSection() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -2551,7 +3122,7 @@ class _AdminTournamentControlScreenState
                       ),
                       Switch(
                         value: s.isMain,
-                        activeColor: const Color(0xFFD946EF),
+                        activeThumbColor: const Color(0xFFD946EF),
                         onChanged: (v) => v ? _setMainSponsor(s.id) : null,
                       ),
                       IconButton(
@@ -2926,6 +3497,10 @@ class _AdminTournamentControlScreenState
         const SizedBox(height: 30),
 
         _buildSponsorsSection(),
+
+        const SizedBox(height: 30),
+
+        _buildPricingSection(),
 
         const SizedBox(height: 30),
 
@@ -6042,5 +6617,29 @@ class _AddStageWizardSheetState extends State<_AddStageWizardSheet> {
         _buildNavBar(),
       ],
     );
+  }
+}
+
+class _TierDialogDraft {
+  String name;
+  double price;
+  DateTime? validUntil;
+  late final TextEditingController nameCtrl;
+  late final TextEditingController priceCtrl;
+
+  _TierDialogDraft({
+    this.name = '',
+    this.price = 0,
+    this.validUntil,
+  }) {
+    nameCtrl = TextEditingController(text: name);
+    priceCtrl = TextEditingController(
+      text: price > 0 ? price.toStringAsFixed(0) : '',
+    );
+  }
+
+  void dispose() {
+    nameCtrl.dispose();
+    priceCtrl.dispose();
   }
 }

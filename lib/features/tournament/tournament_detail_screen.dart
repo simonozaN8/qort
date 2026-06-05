@@ -21,6 +21,8 @@ import '../../core/constants/query_limits.dart';
 import '../../core/constants/match_constants.dart';
 import '../../core/models/sport_catalog_entry.dart';
 import '../../core/services/tournament_registration_service.dart';
+import '../../core/services/pricing_tier_service.dart';
+import '../../core/widgets/pricing_tier_display.dart';
 import '../../core/services/sports_catalog_service.dart';
 import '../../core/utils/sport_levels.dart';
 import '../../core/utils/tournament_format_utils.dart';
@@ -55,6 +57,9 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
 
   int _myLevelInThisSport = 1;
   SportCatalogEntry? _sportCatalogEntry;
+  List<PricingTier> _pricingTiers = [];
+  String? _eventRules;
+  bool _rulesAcknowledged = false;
 
   @override
   void initState() {
@@ -127,11 +132,45 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
         );
       }
 
+      List<PricingTier> tiers = [];
+      String? eventRules;
+      final eventId = widget.tournament['event_id']?.toString();
+      if (eventId != null && eventId.isNotEmpty) {
+        try {
+          tiers = await PricingTierService.listByEvent(eventId);
+        } catch (_) {}
+        try {
+          final ev = await client
+              .from('events')
+              .select('rules')
+              .eq('id', eventId)
+              .maybeSingle();
+          eventRules = ev?['rules']?.toString();
+        } catch (_) {}
+      }
+      if (tiers.isEmpty) {
+        final fee = (widget.tournament['entry_fee'] as num?)?.toDouble();
+        if (fee != null) {
+          tiers = [
+            PricingTier(
+              id: '',
+              eventId: eventId ?? '',
+              name: 'Įprasta',
+              price: fee,
+              displayOrder: 0,
+            ),
+          ];
+        }
+      }
+
       if (mounted) {
         setState(() {
           _participants = pData;
           _matches = mData;
           _isParticipating = amIIn;
+          _pricingTiers = tiers;
+          _eventRules = eventRules;
+          _rulesAcknowledged = false;
           _isLoading = false;
         });
       }
@@ -141,17 +180,295 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
     }
   }
 
+  bool get _hasEventRules => (_eventRules?.trim().isNotEmpty ?? false);
+
+  bool get _canRegister =>
+      _hasEventRules && _rulesAcknowledged && !_isParticipating;
+
+  Widget _buildRulesPreview(String rules) {
+    if (rules.trim().isEmpty) {
+      return const Text(
+        'Taisyklės nenurodytos',
+        style: TextStyle(color: Colors.redAccent, fontSize: 13),
+      );
+    }
+
+    final isLong = rules.length > 200;
+    final preview = isLong ? '${rules.substring(0, 200)}...' : rules;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          preview,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 13,
+            height: 1.4,
+          ),
+        ),
+        if (isLong) ...[
+          const SizedBox(height: 8),
+          InkWell(
+            onTap: () => _showFullRules(rules),
+            child: Row(
+              children: [
+                Icon(
+                  LucideIcons.maximize2,
+                  color: QortModeColors.competition,
+                  size: 14,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Skaityti pilnas',
+                  style: TextStyle(
+                    color: QortModeColors.competition,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _showFullRules(String rules) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          constraints: BoxConstraints(
+            maxWidth: 500,
+            maxHeight: MediaQuery.of(ctx).size.height * 0.8,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    LucideIcons.fileText,
+                    color: QortModeColors.competition,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'TURNYRO TAISYKLĖS',
+                    style: GoogleFonts.oswald(
+                      color: QortModeColors.competition,
+                      fontSize: 18,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white70),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const Divider(color: Colors.white24),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Text(
+                    rules,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRulesAcknowledgmentSection() {
+    final rules = _eventRules ?? '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _rulesAcknowledged
+              ? QortModeColors.competition
+              : Colors.white12,
+          width: _rulesAcknowledged ? 1.5 : 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                LucideIcons.fileText,
+                color: QortModeColors.competition,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'TURNYRO TAISYKLĖS',
+                style: GoogleFonts.oswald(
+                  color: QortModeColors.competition,
+                  fontSize: 13,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildRulesPreview(rules),
+          if (_hasEventRules) ...[
+            const SizedBox(height: 16),
+            InkWell(
+              onTap: () => setState(() => _rulesAcknowledged = !_rulesAcknowledged),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _rulesAcknowledged
+                      ? QortModeColors.competition.withValues(alpha: 0.1)
+                      : null,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _rulesAcknowledged
+                        ? QortModeColors.competition
+                        : Colors.white24,
+                    width: _rulesAcknowledged ? 2 : 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _rulesAcknowledged
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank,
+                      color: _rulesAcknowledged
+                          ? QortModeColors.competition
+                          : Colors.white54,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Susipažinau su turnyro taisyklėmis ir sutinku jų laikytis',
+                        style: TextStyle(
+                          color: _rulesAcknowledged
+                              ? Colors.white
+                              : Colors.white70,
+                          fontSize: 13,
+                          fontWeight: _rulesAcknowledged
+                              ? FontWeight.w600
+                              : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRegistrationBarButton(int rpValue) {
+    final currentPrice = PricingTierService.currentPrice(_pricingTiers);
+    final priceSuffix = currentPrice != null && currentPrice > 0
+        ? ' UŽ ${currentPrice.toStringAsFixed(0)}€'
+        : '';
+    final isTeam = TournamentFormatUtils.requiresTeamRegistration(
+      widget.tournament,
+    );
+
+    if (_isParticipating) {
+      return ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          side: const BorderSide(color: Colors.red),
+          minimumSize: const Size(double.infinity, 50),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        onPressed: _leaveTournament,
+        child: Text(
+          'IŠEITI IŠ TURNYRO',
+          style: GoogleFonts.bebasNeue(
+            fontSize: 22,
+            color: Colors.red,
+            letterSpacing: 1,
+          ),
+        ),
+      );
+    }
+
+    final canPress = _canRegister;
+    String label;
+    if (!_hasEventRules) {
+      label = 'TAISYKLĖS NENURODYTOS — REGISTRACIJA NEGALIMA';
+    } else if (!_rulesAcknowledged) {
+      label = 'PATVIRTINK TAISYKLES, KAD GALĖTUM REGISTRUOTIS';
+    } else if (isTeam) {
+      label = 'REGISTRUOTI KOMANDĄ$priceSuffix ($rpValue RP)';
+    } else {
+      label = 'REGISTRUOTIS$priceSuffix (Kovoti dėl $rpValue RP)';
+    }
+
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: canPress
+            ? QortModeColors.competition
+            : Colors.grey,
+        foregroundColor: canPress ? QortColors.textPrimary : Colors.white38,
+        disabledBackgroundColor: Colors.white12,
+        disabledForegroundColor: Colors.white38,
+        minimumSize: const Size(double.infinity, 50),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+      onPressed: canPress ? _showDivisionSelection : null,
+      child: Text(
+        label,
+        textAlign: TextAlign.center,
+        style: GoogleFonts.bebasNeue(
+          fontSize: 14,
+          letterSpacing: 1,
+          color: canPress ? QortColors.textPrimary : Colors.white38,
+        ),
+      ),
+    );
+  }
+
   void _shareTournament() {
     final t = widget.tournament;
     final startDate = t['start_date'] != null
         ? DateFormat('yyyy-MM-dd').format(DateTime.parse(t['start_date']))
         : "Nenurodyta";
 
+    final currentPrice = PricingTierService.currentPrice(_pricingTiers);
+    final priceLabel = currentPrice != null
+        ? currentPrice.toStringAsFixed(0)
+        : '${t['entry_fee'] ?? '0'}';
+
     final text =
         "🔥 Kviečiu dalyvauti turnyre: ${t['name']}!\n"
         "📍 Vieta: ${t['location'] ?? '-'}\n"
         "📅 Data: $startDate\n"
-        "💶 Kaina: ${t['entry_fee'] ?? '0'} €\n\n"
+        "💶 Kaina: $priceLabel €\n\n"
         "👉 Parsisiųskite programėlę ir registruokitės!";
 
     Clipboard.setData(ClipboardData(text: text));
@@ -1042,45 +1359,14 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
                   height: 50,
                   child: Center(child: CircularProgressIndicator()),
                 )
-              : (_isParticipating
-                    ? ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          side: const BorderSide(color: Colors.red),
-                          minimumSize: const Size(double.infinity, 50),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        onPressed: _leaveTournament,
-                        child: Text(
-                          "IŠEITI IŠ TURNYRO",
-                          style: GoogleFonts.bebasNeue(
-                            fontSize: 22,
-                            color: Colors.red,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                      )
-                    : ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: QortModeColors.competition,
-                          minimumSize: const Size(double.infinity, 50),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        onPressed: _showDivisionSelection,
-                        child: Text(
-                          TournamentFormatUtils.requiresTeamRegistration(
-                                widget.tournament,
-                              )
-                              ? "REGISTRUOTI KOMANDĄ ($rpValue RP)"
-                              : "DALYVAUTI (Kovoti dėl $rpValue RP)",
-                          style: GoogleFonts.bebasNeue(color: QortColors.textPrimary, letterSpacing: 1,
-                          ),
-                        ),
-                      )),
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (!_isParticipating) _buildRulesAcknowledgmentSection(),
+                    _buildRegistrationBarButton(rpValue),
+                  ],
+                ),
         ),
       ),
       body: _isLoading
@@ -1231,12 +1517,24 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
                   t['location'] ?? "Nenurodyta",
                 ),
                 const Divider(color: QortColors.border, height: 20),
-                _infoRow(
+                _infoRowWidget(
                   LucideIcons.euro,
                   "Dalyvio mokestis",
-                  t['entry_fee'] != null && t['entry_fee'] > 0
-                      ? "${t['entry_fee']} €"
-                      : "Nemokama",
+                  _pricingTiers.isEmpty
+                      ? Text(
+                          t['entry_fee'] != null && t['entry_fee'] > 0
+                              ? "${t['entry_fee']} €"
+                              : "Nemokama",
+                          style: const TextStyle(
+                            color: QortColors.textPrimary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        )
+                      : PricingTierDisplay(
+                          tiers: _pricingTiers,
+                          onDarkBackground: false,
+                        ),
                 ),
                 const Divider(color: QortColors.border, height: 20),
                 if (t['team_format'] != null)
@@ -1557,6 +1855,19 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen>
             fontWeight: FontWeight.bold,
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _infoRowWidget(IconData icon, String label, Widget value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: QortModeColors.competition, size: 20),
+        const SizedBox(width: 15),
+        Text(label, style: const TextStyle(color: QortColors.textSecondary, fontSize: 14)),
+        const Spacer(),
+        Flexible(child: value),
       ],
     );
   }

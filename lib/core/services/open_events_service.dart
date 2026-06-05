@@ -24,9 +24,10 @@ class OpenEventsService {
       name, sport, location, description, organizer,
       organizer_email, organizer_phone,
       image_url, image_flip_horizontal, cover_filter_preset, start_date, end_date,
-      status, approval_status,
+      status, approval_status, registration_deadline,
       tournaments(id, name, format_code, gender, min_rp, max_rp, entry_fee),
-      event_sponsors(id, logo_url, name, sponsor_label, website_url, is_main, display_order)
+      event_sponsors(id, logo_url, name, sponsor_label, website_url, is_main, display_order),
+      pricing_tiers(id, event_id, name, price, valid_until, display_order)
     ''';
 
   static Future<List<dynamic>> loadOpenEvents({
@@ -130,7 +131,6 @@ class OpenEventsService {
 
     final counts = <String, int>{};
     for (final row in data) {
-      if (row is! Map) continue;
       final tid = row['tournament_id']?.toString();
       if (tid != null) {
         counts[tid] = (counts[tid] ?? 0) + 1;

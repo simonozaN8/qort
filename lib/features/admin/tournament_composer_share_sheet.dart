@@ -14,6 +14,7 @@ import 'package:universal_html/html.dart' as html;
 
 import '../../core/constants/tournament_links.dart';
 import '../../core/services/event_sponsor_service.dart';
+import '../../core/services/pricing_tier_service.dart';
 import 'tournament_composer_widget.dart';
 import 'tournament_sponsor_band.dart';
 
@@ -157,12 +158,12 @@ class _TournamentComposerShareSheetState
       );
     }).toList();
 
-    double? price;
-    if (_tournaments.isNotEmpty) {
-      final first = _tournaments.first;
-      if (first is Map && first['entry_fee'] != null) {
-        price = (first['entry_fee'] as num).toDouble();
-      }
+    List<PricingTier>? tiers;
+    if (_event != null) {
+      final resolved = PricingTierService.resolveForEvent(
+        Map<String, dynamic>.from(_event!),
+      );
+      if (resolved.isNotEmpty) tiers = resolved;
     }
 
     final mainList = _eventSponsors.where((s) => s.isMain).toList();
@@ -178,7 +179,8 @@ class _TournamentComposerShareSheetState
       location: eventLocation ?? widget.composer.location,
       startDate: startDate ?? widget.composer.startDate,
       endDate: endDate ?? widget.composer.endDate,
-      price: price ?? widget.composer.price,
+      pricingTiers: tiers ?? widget.composer.pricingTiers,
+      price: tiers == null ? widget.composer.price : null,
       description: eventDesc ?? widget.composer.description,
       organizerName: eventOrg ?? widget.composer.organizerName,
       levels: levels.isNotEmpty ? levels : widget.composer.levels,
@@ -208,7 +210,7 @@ class _TournamentComposerShareSheetState
       }
       final e = await client
           .from('events')
-          .select('*, tournaments(*), event_sponsors(*)')
+          .select('*, tournaments(*), event_sponsors(*), pricing_tiers(*)')
           .eq('id', eventId)
           .single();
       final tournaments = (e['tournaments'] as List?) ?? const [];

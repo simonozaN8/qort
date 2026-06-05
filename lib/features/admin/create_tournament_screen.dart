@@ -11,6 +11,9 @@ import '../../core/constants/event_organizer_policy.dart';
 import '../../core/models/sport_catalog_entry.dart';
 import '../../core/services/sports_catalog_service.dart';
 import '../../core/services/event_sponsor_service.dart';
+import '../../core/services/pricing_tier_service.dart';
+import '../../core/services/rules_template_service.dart';
+import '../../core/utils/datetime_utils.dart';
 import '../../core/utils/sport_levels.dart';
 import '../../core/theme/qort_colors.dart';
 import '../../core/widgets/qort_form_help.dart';
@@ -44,11 +47,15 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   final _locationCtrl = TextEditingController();
   final _descriptionCtrl = TextEditingController();
   final _rulesCtrl = TextEditingController();
+  final _rulesFieldKey = GlobalKey();
   final _prizeCtrl = TextEditingController();
   final _prizesInfoCtrl = TextEditingController();
   final _maxParticipantsCtrl = TextEditingController(text: "16");
-  final _priceCtrl = TextEditingController(text: "20");
   final _rpValueCtrl = TextEditingController(text: "1000");
+  final List<_PricingTierDraft> _pricingTiers = [
+    _PricingTierDraft(name: 'Įprasta', priceText: '20'),
+  ];
+  DateTime? _registrationDeadline;
   final _organizerCtrl = TextEditingController();
   final _organizerEmailCtrl = TextEditingController();
   final _organizerPhoneCtrl = TextEditingController();
@@ -97,6 +104,9 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           }
         });
         await _refreshSportEntry();
+        if (_rulesCtrl.text.trim().isEmpty) {
+          await _loadRulesTemplate(_selectedSport, silent: true);
+        }
       }
     } catch (e) {
       debugPrint("Klaida kraunant sportus: $e");
@@ -165,7 +175,9 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     _prizeCtrl.dispose();
     _prizesInfoCtrl.dispose();
     _maxParticipantsCtrl.dispose();
-    _priceCtrl.dispose();
+    for (final t in _pricingTiers) {
+      t.dispose();
+    }
     _rpValueCtrl.dispose();
     _organizerCtrl.dispose();
     _organizerEmailCtrl.dispose();
@@ -224,7 +236,149 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     }).toList();
   }
 
-  double? get _entryPrice => double.tryParse(_priceCtrl.text);
+  Future<void> _loadRulesTemplate(String sportName, {bool silent = false}) async {
+    try {
+      final template = await RulesTemplateService.getDefaultForSport(sportName);
+
+      if (template == null) {
+        if (!silent && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Šio sporto šablono dar nėra. Įvesk taisykles rankomis.',
+              ),
+              backgroundColor: Colors.orange.shade700,
+            ),
+          );
+        }
+        return;
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _rulesCtrl.text = template.content;
+      });
+
+      if (!silent) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Pridėtos $sportName taisyklės. Gali keisti pagal poreikį.',
+            ),
+            duration: const Duration(seconds: 3),
+            backgroundColor: const Color(0xFFEAB308),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Rules template load fail: $e');
+    }
+  }
+
+  Future<void> _onSportChanged(String? v) async {
+    if (v == null) return;
+    setState(() => _selectedSport = v);
+    await _refreshSportEntry();
+    if (_rulesCtrl.text.trim().isEmpty) {
+      await _loadRulesTemplate(v, silent: true);
+    }
+  }
+
+  Widget _buildRulesSection() {
+    return Container(
+      key: _rulesFieldKey,
+      margin: const EdgeInsets.only(bottom: 15),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'TAISYKLĖS *',
+                style: GoogleFonts.oswald(
+                  color: QortColors.primary,
+                  fontSize: 13,
+                  letterSpacing: 1.2,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                icon: const Icon(Icons.file_download_outlined, size: 16),
+                label: const Text('Įkelti šabloną'),
+                onPressed: () => _loadRulesTemplate(_selectedSport),
+                style: TextButton.styleFrom(
+                  foregroundColor: QortColors.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _rulesCtrl,
+            maxLines: 10,
+            style: const TextStyle(
+              color: QortColors.textPrimary,
+              fontSize: 13,
+              height: 1.4,
+            ),
+            cursorColor: QortColors.primary,
+            decoration: InputDecoration(
+              hintText:
+                  'Įvesk turnyro taisykles arba paspausk „Įkelti šabloną“ viršuje',
+              hintStyle: TextStyle(
+                color: QortColors.textSecondary.withValues(alpha: 0.7),
+              ),
+              helperText: 'Privalomos. Dalyviai turės sutikti registracijos metu.',
+              helperStyle: const TextStyle(
+                color: Colors.white54,
+                fontSize: 11,
+              ),
+              helperMaxLines: 2,
+              filled: true,
+              fillColor: QortColors.surface,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: QortColors.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: QortColors.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: QortColors.primary, width: 2),
+              ),
+              contentPadding: const EdgeInsets.all(15),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  double? get _entryPrice {
+    if (_pricingTiers.isEmpty) return null;
+    return double.tryParse(_pricingTiers.first.priceCtrl.text);
+  }
+
+  List<PricingTier> _pricingTiersForPreview() {
+    return _pricingTiers.asMap().entries.map((entry) {
+      final i = entry.key;
+      final d = entry.value;
+      final name = d.nameCtrl.text.trim();
+      return PricingTier(
+        id: 'draft_$i',
+        eventId: '',
+        name: name.isEmpty ? (i == 0 ? 'Įprasta' : 'Pakopa ${i + 1}') : name,
+        price: double.tryParse(d.priceCtrl.text) ?? 0,
+        validUntil: d.validUntil,
+        displayOrder: i,
+      );
+    }).toList();
+  }
 
   Future<void> _addSponsorDraft() async {
     final picked = await _picker.pickImage(
@@ -629,6 +783,42 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       return;
     }
 
+    final rulesText = _rulesCtrl.text.trim();
+    if (rulesText.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Privalu užpildyti turnyro taisykles'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+      final rulesCtx = _rulesFieldKey.currentContext;
+      if (rulesCtx != null) {
+        await Scrollable.ensureVisible(
+          rulesCtx,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      }
+      return;
+    }
+    if (rulesText.length < 50) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Taisyklės per trumpos — bent 50 simbolių'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+      final rulesCtx = _rulesFieldKey.currentContext;
+      if (rulesCtx != null) {
+        await Scrollable.ensureVisible(
+          rulesCtx,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      }
+      return;
+    }
+
     setState(() => _isLoading = true);
     final userId = Supabase.instance.client.auth.currentUser?.id;
 
@@ -679,12 +869,31 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             'organizer_note': _organizerNoteCtrl.text.trim().isEmpty
                 ? null
                 : _organizerNoteCtrl.text.trim(),
+            if (_registrationDeadline != null)
+              'registration_deadline':
+                  DateTimeUtils.toIsoUtc(_registrationDeadline!),
             ..._coverFieldsForInsert(mainImgUrl),
           })
           .select()
           .single();
 
       final eventId = eventResponse['id'].toString();
+
+      final previewTiers = _pricingTiersForPreview();
+      final entryFee =
+          PricingTierService.getEffectiveTier(previewTiers)?.price ?? 0.0;
+      for (var i = 0; i < _pricingTiers.length; i++) {
+        final tier = _pricingTiers[i];
+        await PricingTierService.add(
+          eventId: eventId,
+          name: tier.nameCtrl.text.trim().isEmpty
+              ? 'Pakopa ${i + 1}'
+              : tier.nameCtrl.text.trim(),
+          price: double.tryParse(tier.priceCtrl.text) ?? 0.0,
+          validUntil: tier.validUntil,
+          displayOrder: i,
+        );
+      }
 
       // Sponsors
       for (var i = 0; i < _sponsors.length; i++) {
@@ -720,7 +929,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           'sport': _selectedSport,
           'location': _locationCtrl.text.trim(),
           'max_participants': int.tryParse(_maxParticipantsCtrl.text) ?? 16,
-          'entry_fee': double.tryParse(_priceCtrl.text) ?? 0.0,
+          'entry_fee': entryFee,
           'rp_value': int.tryParse(_rpValueCtrl.text) ?? 1000,
           'prize_pool': _prizeCtrl.text.trim(),
           'start_date': _startDate.toIso8601String(),
@@ -846,10 +1055,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               "Sporto šaka",
               _selectedSport,
               _sportOptions,
-              (v) async {
-                setState(() => _selectedSport = v!);
-                await _refreshSportEntry();
-              },
+              (v) => _onSportChanged(v),
               help: QortFormHelpTexts.createSport,
             ),
             const SizedBox(height: 20),
@@ -886,13 +1092,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               maxLines: 4,
               help: QortFormHelpTexts.createDescription,
             ),
-            _buildTextField(
-              _rulesCtrl,
-              "Taisyklės (Neprivaloma)",
-              icon: LucideIcons.bookOpen,
-              maxLines: 4,
-              help: QortFormHelpTexts.createRules,
-            ),
+            _buildRulesSection(),
 
             const SizedBox(height: 25),
             _buildSectionTitle("REIKALAVIMAI VISIEMS LYGIAMS"),
@@ -1064,28 +1264,20 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 ),
               ],
             ),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildTextField(
-                    _priceCtrl,
-                    "Kaina (€)",
-                    isNumber: true,
-                    icon: LucideIcons.euro,
-                    help: QortFormHelpTexts.createPrice,
-                  ),
-                ),
-                const SizedBox(width: 15),
-                Expanded(
-                  child: _buildTextField(
-                    _maxParticipantsCtrl,
-                    "Max dalyvių lygiui",
-                    isNumber: true,
-                    icon: LucideIcons.users,
-                    help: QortFormHelpTexts.createMaxParticipants,
-                  ),
-                ),
-              ],
+            _buildPricingTiersSection(),
+            _buildOptionalDatePicker(
+              label: 'Registracija uždaroma',
+              date: _registrationDeadline,
+              onSelect: (d) => setState(() => _registrationDeadline = d),
+              onClear: () => setState(() => _registrationDeadline = null),
+              hint: 'Tuščia = uždaryta turnyro pradžioje',
+            ),
+            _buildTextField(
+              _maxParticipantsCtrl,
+              "Max dalyvių lygiui",
+              isNumber: true,
+              icon: LucideIcons.users,
+              help: QortFormHelpTexts.createMaxParticipants,
             ),
             _buildTextField(
               _rpValueCtrl,
@@ -1359,7 +1551,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 : _locationCtrl.text.trim(),
             startDate: _startDate,
             endDate: _endDate,
-            price: _entryPrice,
+            pricingTiers: _pricingTiersForPreview(),
             description: _descriptionCtrl.text.trim().isEmpty
                 ? 'Pridėk renginio aprašymą - jis bus matomas ant kortelės'
                 : _descriptionCtrl.text.trim(),
@@ -1519,7 +1711,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                     const Spacer(),
                     Switch(
                       value: s.isMain,
-                      activeColor: const Color(0xFFD946EF),
+                      activeThumbColor: const Color(0xFFD946EF),
                       onChanged: (v) => _toggleMainSponsor(idx, v),
                     ),
                   ],
@@ -1555,6 +1747,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     IconData? icon,
     int maxLines = 1,
     String? help,
+    String? helperText,
     ValueChanged<String>? onChanged,
   }) {
     return Container(
@@ -1603,6 +1796,12 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                 borderSide: const BorderSide(color: QortColors.primary, width: 1.5),
               ),
               contentPadding: const EdgeInsets.all(15),
+              helperText: helperText,
+              helperStyle: const TextStyle(
+                color: Colors.white54,
+                fontSize: 11,
+              ),
+              helperMaxLines: 3,
             ),
           ),
         ],
@@ -1728,6 +1927,203 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildPricingTiersSection() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 15),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: QortColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: QortColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'KAINOS PAKOPOS',
+            style: GoogleFonts.oswald(
+              color: QortColors.primary,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Viena pakopa = fiksuota kaina. Paskutinė pakopa be datos galioja visada.',
+            style: TextStyle(color: QortColors.textSecondary, fontSize: 11),
+          ),
+          const SizedBox(height: 12),
+          ..._pricingTiers.asMap().entries.map((entry) {
+            final idx = entry.key;
+            final tier = entry.value;
+            final isLast = idx == _pricingTiers.length - 1;
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: QortColors.surfaceElevated,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: QortColors.border.withValues(alpha: 0.5)),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildTextField(
+                          tier.nameCtrl,
+                          'Pavadinimas',
+                          onChanged: (_) => setState(() {}),
+                        ),
+                      ),
+                      if (_pricingTiers.length > 1)
+                        IconButton(
+                          icon: const Icon(LucideIcons.trash2, color: Colors.redAccent),
+                          onPressed: () {
+                            tier.dispose();
+                            setState(() => _pricingTiers.removeAt(idx));
+                          },
+                        ),
+                    ],
+                  ),
+                  _buildTextField(
+                    tier.priceCtrl,
+                    'Kaina (€)',
+                    isNumber: true,
+                    icon: LucideIcons.euro,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  if (!isLast)
+                    _buildOptionalDatePicker(
+                      label: 'Galioja iki',
+                      date: tier.validUntil,
+                      onSelect: (d) => setState(() {
+                        tier.validUntil = DateTime(
+                          d.year,
+                          d.month,
+                          d.day,
+                          23,
+                          59,
+                          59,
+                        );
+                      }),
+                      onClear: () => setState(() => tier.validUntil = null),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Paskutinė pakopa — galioja visada',
+                        style: TextStyle(
+                          color: QortColors.textSecondary.withValues(alpha: 0.8),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                setState(() {
+                  _pricingTiers.add(_PricingTierDraft(name: 'Early Bird'));
+                });
+              },
+              icon: const Icon(LucideIcons.plus, size: 18),
+              label: const Text('+ Pridėti pakopą'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOptionalDatePicker({
+    required String label,
+    required DateTime? date,
+    required void Function(DateTime) onSelect,
+    required VoidCallback onClear,
+    String? hint,
+  }) {
+    return GestureDetector(
+      onTap: () async {
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: date ?? DateTime.now().add(const Duration(days: 7)),
+          firstDate: DateTime.now(),
+          lastDate: DateTime.now().add(const Duration(days: 730)),
+        );
+        if (picked != null) onSelect(picked);
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: QortColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: QortColors.border),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: QortColors.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    date != null
+                        ? DateFormat('yyyy-MM-dd').format(date)
+                        : (hint ?? 'Nepasirinkta'),
+                    style: TextStyle(
+                      color: date != null
+                          ? QortColors.textPrimary
+                          : QortColors.textSecondary,
+                      fontWeight:
+                          date != null ? FontWeight.bold : FontWeight.normal,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (date != null)
+              IconButton(
+                icon: const Icon(LucideIcons.x, size: 18),
+                onPressed: onClear,
+                tooltip: 'Išvalyti',
+              ),
+            const Icon(LucideIcons.calendar, color: QortColors.primary, size: 18),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PricingTierDraft {
+  final TextEditingController nameCtrl;
+  final TextEditingController priceCtrl;
+  DateTime? validUntil;
+
+  _PricingTierDraft({String name = '', String priceText = '0'})
+      : nameCtrl = TextEditingController(text: name),
+        priceCtrl = TextEditingController(text: priceText);
+
+  void dispose() {
+    nameCtrl.dispose();
+    priceCtrl.dispose();
   }
 }
 

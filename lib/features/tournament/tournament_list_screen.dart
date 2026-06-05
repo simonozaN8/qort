@@ -9,6 +9,7 @@ import '../../core/widgets/qort_components.dart';
 import '../../core/widgets/qort_ambient_background.dart';
 import '../../core/widgets/qort_live_scaffold.dart';
 import '../../core/services/open_events_service.dart';
+import '../../core/services/pricing_tier_service.dart';
 import '../../core/services/sports_catalog_service.dart';
 import '../../core/theme/qort_colors.dart';
 import '../../core/theme/qort_palette_extension.dart';
@@ -22,6 +23,9 @@ import '../admin/tournament_sponsor_band.dart';
 
 import 'event_detail_screen.dart';
 import 'tournament_detail_screen.dart';
+import 'tournament_calendar_view.dart';
+
+enum _ViewMode { list, calendar }
 
 class _FilterState {
   final OpenEventsSortMode sort;
@@ -60,6 +64,7 @@ class TournamentListScreen extends StatefulWidget {
 
 class _TournamentListScreenState extends State<TournamentListScreen> {
   _FilterState _filterState = const _FilterState();
+  _ViewMode _viewMode = _ViewMode.list;
   List<String> _availableSports = [];
   List<String> _availableCities = [];
   List<dynamic> _events = [];
@@ -150,6 +155,32 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
     return events;
   }
 
+  List<Map<String, dynamic>> _displayedEventMaps() {
+    return _displayedEvents()
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  void _openEventDetail(Map<String, dynamic> event) {
+    final isParentEvent = event['is_parent_event'] == true;
+    if (isParentEvent) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => EventDetailScreen(event: event),
+        ),
+      );
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => TournamentDetailScreen(tournament: event),
+        ),
+      );
+    }
+  }
+
   Future<void> _openFilterSheet() async {
     final result = await showModalBottomSheet<_FilterState>(
       context: context,
@@ -237,9 +268,193 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
     );
   }
 
+  Widget _buildAppBarActions(BuildContext context, Color accent) {
+    final p = context.qortPalette;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          icon: Icon(
+            _viewMode == _ViewMode.list
+                ? LucideIcons.calendar
+                : LucideIcons.list,
+            color: p.textSecondary,
+          ),
+          tooltip: _viewMode == _ViewMode.list
+              ? 'Rodyti kalendoriuje'
+              : 'Rodyti sąraše',
+          onPressed: () {
+            setState(() {
+              _viewMode = _viewMode == _ViewMode.list
+                  ? _ViewMode.calendar
+                  : _ViewMode.list;
+            });
+          },
+        ),
+        IconButton(
+          icon: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(
+                LucideIcons.slidersHorizontal,
+                color: p.textSecondary,
+              ),
+              if (_hasActiveFilters)
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: accent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          onPressed: _openFilterSheet,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHero(int eventCount) {
+    return QortCompactHero(
+      mode: AppMode.competition,
+      title: 'Turnyrai · Kalendorius',
+      subtitle: '$eventCount renginiai',
+    );
+  }
+
+  Widget _buildListBody(
+    BuildContext context,
+    List<dynamic> displayedEvents,
+    Color accent,
+  ) {
+    final p = context.qortPalette;
+
+    return RefreshIndicator(
+      color: QortColors.primary,
+      onRefresh: _loadEvents,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
+        ),
+        slivers: [
+          SliverAppBar(
+            expandedHeight: 130,
+            floating: true,
+            snap: true,
+            pinned: false,
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            automaticallyImplyLeading: false,
+            actions: [
+              _buildAppBarActions(context, accent),
+              const SizedBox(width: 4),
+            ],
+            flexibleSpace: FlexibleSpaceBar(
+              background: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 12, 0),
+                child: Align(
+                  alignment: Alignment.bottomLeft,
+                  child: _buildHero(displayedEvents.length),
+                ),
+              ),
+            ),
+          ),
+          if (_hasActiveFilters)
+            SliverToBoxAdapter(child: _buildActiveFiltersBar()),
+          if (_isLoading)
+            const SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: CircularProgressIndicator(color: QortColors.primary),
+              ),
+            )
+          else if (displayedEvents.isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: Text(
+                  'Šiuo metu renginių nėra.',
+                  style: TextStyle(color: p.textSecondary),
+                ),
+              ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) => _buildEventCard(
+                    displayedEvents[index] as Map<String, dynamic>,
+                  ),
+                  childCount: displayedEvents.length,
+                ),
+              ),
+            ),
+          SliverToBoxAdapter(
+            child: SizedBox(
+              height: AppShellLayout.scrollBottomPadding(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalendarBody(
+    BuildContext context,
+    List<Map<String, dynamic>> displayedEventMaps,
+    int eventCount,
+    Color accent,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 0, 4, 0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 8, 0, 0),
+                  child: _buildHero(eventCount),
+                ),
+              ),
+              _buildAppBarActions(context, accent),
+            ],
+          ),
+        ),
+        if (_hasActiveFilters) _buildActiveFiltersBar(),
+        Expanded(
+          child: _isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(color: QortColors.primary),
+                )
+              : Padding(
+                  padding: EdgeInsets.only(
+                    bottom: AppShellLayout.scrollBottomPadding(context),
+                  ),
+                  child: TournamentCalendarView(
+                    events: displayedEventMaps,
+                    onEventTap: _openEventDetail,
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final displayedEvents = _displayedEvents();
+    final displayedEventMaps = _displayedEventMaps();
     final p = context.qortPalette;
     const accent = QortDesignSystem.competition;
 
@@ -252,106 +467,14 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 520),
-                child: RefreshIndicator(
-                  color: QortColors.primary,
-                  onRefresh: _loadEvents,
-                  child: CustomScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(
-                      parent: BouncingScrollPhysics(),
-                    ),
-                    slivers: [
-                      SliverAppBar(
-                        expandedHeight: 130,
-                        floating: true,
-                        snap: true,
-                        pinned: false,
-                        backgroundColor: Colors.transparent,
-                        elevation: 0,
-                        scrolledUnderElevation: 0,
-                        automaticallyImplyLeading: false,
-                        actions: [
-                          IconButton(
-                            icon: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                Icon(
-                                  LucideIcons.slidersHorizontal,
-                                  color: p.textSecondary,
-                                ),
-                                if (_hasActiveFilters)
-                                  Positioned(
-                                    right: 0,
-                                    top: 0,
-                                    child: Container(
-                                      width: 8,
-                                      height: 8,
-                                      decoration: const BoxDecoration(
-                                        color: accent,
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            onPressed: _openFilterSheet,
-                          ),
-                          const SizedBox(width: 4),
-                        ],
-                        flexibleSpace: FlexibleSpaceBar(
-                          background: Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 8, 12, 0),
-                            child: Align(
-                              alignment: Alignment.bottomLeft,
-                              child: QortCompactHero(
-                                mode: AppMode.competition,
-                                title: 'Turnyrai · Kalendorius',
-                                subtitle: '${displayedEvents.length} renginiai',
-                              ),
-                            ),
-                          ),
-                        ),
+                child: _viewMode == _ViewMode.list
+                    ? _buildListBody(context, displayedEvents, accent)
+                    : _buildCalendarBody(
+                        context,
+                        displayedEventMaps,
+                        displayedEvents.length,
+                        accent,
                       ),
-                      if (_hasActiveFilters)
-                        SliverToBoxAdapter(child: _buildActiveFiltersBar()),
-                      if (_isLoading)
-                        const SliverFillRemaining(
-                          hasScrollBody: false,
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              color: QortColors.primary,
-                            ),
-                          ),
-                        )
-                      else if (displayedEvents.isEmpty)
-                        SliverFillRemaining(
-                          hasScrollBody: false,
-                          child: Center(
-                            child: Text(
-                              'Šiuo metu renginių nėra.',
-                              style: TextStyle(color: p.textSecondary),
-                            ),
-                          ),
-                        )
-                      else
-                        SliverPadding(
-                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                          sliver: SliverList(
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) => _buildEventCard(
-                                displayedEvents[index] as Map<String, dynamic>,
-                              ),
-                              childCount: displayedEvents.length,
-                            ),
-                          ),
-                        ),
-                      SliverToBoxAdapter(
-                        child: SizedBox(
-                          height: AppShellLayout.scrollBottomPadding(context),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               ),
             ),
           ),
@@ -384,23 +507,7 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
     final sport = event['sport']?.toString().toUpperCase() ?? 'SPORTAS';
 
     return GestureDetector(
-      onTap: () {
-        if (isParentEvent) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => EventDetailScreen(event: event),
-            ),
-          );
-        } else {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => TournamentDetailScreen(tournament: event),
-            ),
-          );
-        }
-      },
+      onTap: () => _openEventDetail(event),
       child: Container(
         margin: const EdgeInsets.only(bottom: QortDesignSystem.space5),
         decoration: BoxDecoration(
@@ -810,14 +917,9 @@ class _EventComposerCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    double? price;
-    final tList = (event['tournaments'] as List?) ?? const [];
-    if (tList.isNotEmpty) {
-      final first = tList.first;
-      if (first is Map && first['entry_fee'] != null) {
-        price = (first['entry_fee'] as num).toDouble();
-      }
-    }
+    final tiers = PricingTierService.resolveForEvent(
+      Map<String, dynamic>.from(event),
+    );
     return TournamentComposerWidget(
       compact: true,
       imageUrl: event['image_url']?.toString(),
@@ -828,7 +930,7 @@ class _EventComposerCover extends StatelessWidget {
       location: event['location']?.toString(),
       startDate: _parseDate(event['start_date']),
       endDate: _parseDate(event['end_date']),
-      price: price,
+      pricingTiers: tiers,
       levels: _levels(),
     );
   }

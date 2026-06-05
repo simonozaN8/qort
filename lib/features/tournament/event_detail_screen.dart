@@ -11,6 +11,8 @@ import 'tournament_detail_screen.dart';
 import '../../core/widgets/stock_image_attribution.dart';
 import '../admin/tournament_composer_widget.dart';
 import '../../core/services/event_sponsor_service.dart';
+import '../../core/services/pricing_tier_service.dart';
+import '../../core/utils/datetime_utils.dart';
 import '../admin/tournament_sponsor_band.dart';
 
 /// Varžybų lygio prioritetas sąrašui (žemiausias → aukščiausias).
@@ -63,6 +65,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
   List<dynamic> _divisions = [];
   Map<String, dynamic>? _event;
   List<EventSponsor> _eventSponsors = [];
+  List<PricingTier> _pricingTiers = [];
 
   @override
   void initState() {
@@ -71,13 +74,71 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
   }
 
   double? _getEventEntryPrice() {
-    final list = _divisions;
-    if (list.isEmpty) return null;
-    final first = list.first;
-    if (first is Map && first['entry_fee'] != null) {
-      return (first['entry_fee'] as num).toDouble();
+    return PricingTierService.currentPrice(_pricingTiers);
+  }
+
+  String _formatTierUntil(DateTime d) {
+    return '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}';
+  }
+
+  String _buildPriceText(List<PricingTier> tiers) {
+    if (tiers.isEmpty) return 'Kaina nenurodyta';
+
+    if (tiers.length == 1) {
+      final p = tiers.first.price;
+      if (p <= 0) return 'Nemokama';
+      return '${p.toStringAsFixed(0)} €';
     }
-    return null;
+
+    final sorted = [...tiers]
+      ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
+    final parts = <String>[];
+    for (final tier in sorted) {
+      var part = '${tier.name}: ${tier.price.toStringAsFixed(0)} €';
+      if (tier.validUntil != null) {
+        part += ' (iki ${_formatTierUntil(tier.validUntil!)})';
+      }
+      parts.add(part);
+    }
+    return parts.join(' · ');
+  }
+
+  DateTime? _parseDeadline(dynamic deadline) {
+    if (deadline == null) return null;
+    if (deadline is DateTime) return deadline.toLocal();
+    try {
+      return DateTimeUtils.fromIso(deadline.toString());
+    } catch (_) {
+      return DateTime.tryParse(deadline.toString())?.toLocal();
+    }
+  }
+
+  bool _isDeadlineUrgent(dynamic deadline) {
+    final dt = _parseDeadline(deadline);
+    if (dt == null) return false;
+    final daysLeft = dt.difference(DateTime.now()).inDays;
+    return daysLeft >= 0 && daysLeft <= 7;
+  }
+
+  String _buildDeadlineText(dynamic deadline) {
+    final dt = _parseDeadline(deadline);
+    if (dt == null) return 'Registracija atvira';
+
+    final now = DateTime.now();
+    final daysLeft = dt.difference(now).inDays;
+    final dateStr =
+        '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}';
+
+    if (daysLeft < 0) {
+      return 'Registracija uždaryta ($dateStr)';
+    }
+    if (daysLeft == 0) {
+      return 'Registracija: paskutinė diena!';
+    }
+    if (daysLeft <= 7) {
+      return 'Registracija: iki $dateStr (liko $daysLeft d.)';
+    }
+    return 'Registracija: iki $dateStr';
   }
 
   (EventSponsor?, List<EventSponsor>) _sponsorsForPreview() {
@@ -94,7 +155,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
       final eventId = widget.event['id'];
       final fresh = await client
           .from('events')
-          .select('*, tournaments(*), event_sponsors(*)')
+          .select('*, tournaments(*), event_sponsors(*), pricing_tiers(*)')
           .eq('id', eventId)
           .single();
 
@@ -112,10 +173,16 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
           sortedDivisions,
           eventMap['name']?.toString() ?? '',
         );
+        final tiersFromDb = PricingTierService.parseList(eventMap['pricing_tiers']);
+        final tiers = tiersFromDb.isNotEmpty
+            ? tiersFromDb
+            : PricingTierService.resolveForEvent(eventMap);
+
         setState(() {
           _event = eventMap;
           _divisions = sortedDivisions;
           _eventSponsors = sponsors;
+          _pricingTiers = tiers;
           _isLoading = false;
         });
       }
@@ -142,7 +209,11 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     }
   }
 
-  Widget _infoRow({required IconData icon, required String text}) {
+  Widget _infoRow({
+    required IconData icon,
+    required String text,
+    Color? textColor,
+  }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -151,7 +222,10 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(color: Colors.white, fontSize: 15),
+            style: TextStyle(
+              color: textColor ?? Colors.white,
+              fontSize: 15,
+            ),
           ),
         ),
       ],
@@ -194,8 +268,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     final organizer = e['organizer']?.toString().trim();
     final sport = e['sport']?.toString().trim();
     final location = e['location']?.toString().trim();
-    final price = _getEventEntryPrice();
-
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
@@ -226,11 +298,19 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             text:
                 'Data: ${_formatDate(e['start_date'])} → ${_formatDate(e['end_date'])}',
           ),
-          if (price != null && price > 0) ...[
+          const SizedBox(height: 12),
+          _infoRow(
+            icon: LucideIcons.banknote,
+            text: _buildPriceText(_pricingTiers),
+          ),
+          if (e['registration_deadline'] != null) ...[
             const SizedBox(height: 12),
             _infoRow(
-              icon: LucideIcons.banknote,
-              text: 'Dalyvio mokestis: ${price.toStringAsFixed(0)} €',
+              icon: LucideIcons.clock,
+              text: _buildDeadlineText(e['registration_deadline']),
+              textColor: _isDeadlineUrgent(e['registration_deadline'])
+                  ? Colors.redAccent
+                  : null,
             ),
           ],
           const SizedBox(height: 12),
@@ -372,7 +452,8 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                                 .trim();
                           }
 
-                          int price = (div['entry_fee'] ?? 0).toInt();
+                          final tierPrice = _getEventEntryPrice();
+                          final price = (tierPrice ?? (div['entry_fee'] as num?)?.toDouble() ?? 0).toInt();
 
                           return GestureDetector(
                             onTap: () {
