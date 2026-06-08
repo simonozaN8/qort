@@ -23,9 +23,6 @@ import '../admin/tournament_sponsor_band.dart';
 
 import 'event_detail_screen.dart';
 import 'tournament_detail_screen.dart';
-import 'tournament_calendar_view.dart';
-
-enum _ViewMode { list, calendar }
 
 class _FilterState {
   final OpenEventsSortMode sort;
@@ -64,7 +61,6 @@ class TournamentListScreen extends StatefulWidget {
 
 class _TournamentListScreenState extends State<TournamentListScreen> {
   _FilterState _filterState = const _FilterState();
-  _ViewMode _viewMode = _ViewMode.list;
   List<String> _availableSports = [];
   List<String> _availableCities = [];
   List<dynamic> _events = [];
@@ -153,13 +149,6 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
     }
 
     return events;
-  }
-
-  List<Map<String, dynamic>> _displayedEventMaps() {
-    return _displayedEvents()
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
   }
 
   void _openEventDetail(Map<String, dynamic> event) {
@@ -273,24 +262,6 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        IconButton(
-          icon: Icon(
-            _viewMode == _ViewMode.list
-                ? LucideIcons.calendar
-                : LucideIcons.list,
-            color: p.textSecondary,
-          ),
-          tooltip: _viewMode == _ViewMode.list
-              ? 'Rodyti kalendoriuje'
-              : 'Rodyti sąraše',
-          onPressed: () {
-            setState(() {
-              _viewMode = _viewMode == _ViewMode.list
-                  ? _ViewMode.calendar
-                  : _ViewMode.list;
-            });
-          },
-        ),
         IconButton(
           icon: Stack(
             clipBehavior: Clip.none,
@@ -407,54 +378,9 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
     );
   }
 
-  Widget _buildCalendarBody(
-    BuildContext context,
-    List<Map<String, dynamic>> displayedEventMaps,
-    int eventCount,
-    Color accent,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 0, 4, 0),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 8, 0, 0),
-                  child: _buildHero(eventCount),
-                ),
-              ),
-              _buildAppBarActions(context, accent),
-            ],
-          ),
-        ),
-        if (_hasActiveFilters) _buildActiveFiltersBar(),
-        Expanded(
-          child: _isLoading
-              ? const Center(
-                  child: CircularProgressIndicator(color: QortColors.primary),
-                )
-              : Padding(
-                  padding: EdgeInsets.only(
-                    bottom: AppShellLayout.scrollBottomPadding(context),
-                  ),
-                  child: TournamentCalendarView(
-                    events: displayedEventMaps,
-                    onEventTap: _openEventDetail,
-                  ),
-                ),
-        ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final displayedEvents = _displayedEvents();
-    final displayedEventMaps = _displayedEventMaps();
     final p = context.qortPalette;
     const accent = QortDesignSystem.competition;
 
@@ -467,14 +393,7 @@ class _TournamentListScreenState extends State<TournamentListScreen> {
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 520),
-                child: _viewMode == _ViewMode.list
-                    ? _buildListBody(context, displayedEvents, accent)
-                    : _buildCalendarBody(
-                        context,
-                        displayedEventMaps,
-                        displayedEvents.length,
-                        accent,
-                      ),
+                child: _buildListBody(context, displayedEvents, accent),
               ),
             ),
           ),
