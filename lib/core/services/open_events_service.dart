@@ -8,7 +8,7 @@ enum OpenEventsSortMode {
   /// Naujausi viršuje (created_at DESC).
   newest,
 
-  /// Artimiausi pagal start_date; be datos — pabaigoje.
+  /// Artimiausi viršuje (start_date ASC); tik start_date >= šiandien.
   soonest,
 
   /// Daugiausiai registracijų (participants_count DESC).
@@ -63,10 +63,13 @@ class OpenEventsService {
             .limit(limit);
         break;
       case OpenEventsSortMode.soonest:
+        final today = DateTime.now().toIso8601String().substring(0, 10);
         eventsRes = await eventsBase
+            .gte('start_date', today)
             .order('start_date', ascending: true, nullsFirst: false)
             .limit(limit);
         tournamentsRes = await tournamentsBase
+            .gte('start_date', today)
             .order('start_date', ascending: true, nullsFirst: false)
             .limit(limit);
         break;
