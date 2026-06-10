@@ -1061,7 +1061,7 @@ class TournamentEngine {
           .select()
           .eq('id', tournamentId)
           .single();
-      if (tRes['status'] == 'completed') {
+      if (tRes['status'] == 'finished' || tRes['status'] == 'completed') {
         throw Exception("Šis turnyras jau yra baigtas ir taškai išdalinti.");
       }
 
@@ -1223,7 +1223,7 @@ class TournamentEngine {
 
       await client
           .from('tournaments')
-          .update({'status': 'completed'})
+          .update({'status': 'finished'})
           .eq('id', tournamentId);
     } catch (e) {
       debugPrint("Klaida uždarant turnyrą: $e");

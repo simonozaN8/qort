@@ -14,6 +14,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants/query_limits.dart';
+import '../../core/services/event_lifecycle_service.dart';
 import '../../core/services/event_sponsor_service.dart';
 import '../../core/services/pricing_tier_service.dart';
 import '../../core/utils/datetime_utils.dart';
@@ -47,6 +48,8 @@ class _AdminTournamentControlScreenState
     "Bendradarbis",
   ];
   bool _isLoading = false;
+  bool _isSuperAdmin = false;
+  String? _eventStatus;
   List<dynamic> _participants = [];
   List<dynamic> _existingMatches = [];
   List<dynamic> _disputedMatches = [];
@@ -169,7 +172,27 @@ class _AdminTournamentControlScreenState
   void initState() {
     super.initState();
     _venueTypes = List.from(_defaultVenueTypes);
+    _loadIsSuperAdmin();
     _loadData();
+  }
+
+  Future<void> _loadIsSuperAdmin() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+    try {
+      final data = await Supabase.instance.client
+          .from('profiles')
+          .select('is_super_admin')
+          .eq('id', user.id)
+          .single();
+      if (mounted) {
+        setState(() {
+          _isSuperAdmin = data['is_super_admin'] as bool? ?? false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Klaida kraunant super admin statusą: $e');
+    }
   }
 
   String _generateUuid() {
@@ -830,11 +853,12 @@ class _AdminTournamentControlScreenState
           final ev = await client
               .from('events')
               .select(
-                'organizer, organizer_email, organizer_phone, registration_deadline',
+                'organizer, organizer_email, organizer_phone, registration_deadline, status',
               )
               .eq('id', eventId)
               .maybeSingle();
           if (ev != null) {
+            _eventStatus = ev['status']?.toString();
             _organizerCtrl.text = ev['organizer']?.toString() ?? '';
             _organizerEmailCtrl.text = ev['organizer_email']?.toString() ?? '';
             _organizerPhoneCtrl.text = ev['organizer_phone']?.toString() ?? '';
@@ -1075,7 +1099,7 @@ class _AdminTournamentControlScreenState
         "Turnyras sėkmingai baigtas! Taškai ir reitingai išdalinti.",
       );
       setState(() {
-        widget.tournament['status'] = 'completed';
+        widget.tournament['status'] = 'finished';
       });
       _loadData();
     } catch (e) {
@@ -3447,6 +3471,124 @@ class _AdminTournamentControlScreenState
     );
   }
 
+  Future<void> _confirmAndSetStatus(String status, String message) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: QortColors.surface,
+        title: const Text('Patvirtinti'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Atšaukti'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Taip'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    try {
+      if (_eventId != null && _eventId!.isNotEmpty) {
+        await EventLifecycleService.setEventStatus(
+          eventId: _eventId!,
+          status: status,
+        );
+      } else {
+        await EventLifecycleService.setTournamentStatus(
+          tournamentId: widget.tournament['id'].toString(),
+          status: status,
+        );
+      }
+      if (!mounted) return;
+      setState(() => _eventStatus = status);
+      widget.tournament['status'] = status;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Būsena pakeista į "$status"')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Klaida: $e')),
+      );
+    }
+  }
+
+  Widget _buildEventLifecycleSection() {
+    final status = _eventStatus ?? widget.tournament['status']?.toString() ?? '—';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(LucideIcons.shieldAlert, color: Colors.amber, size: 22),
+              const SizedBox(width: 8),
+              Text(
+                'SUPER ADMIN — BŪSENA',
+                style: GoogleFonts.bebasNeue(
+                  color: Colors.amber,
+                  fontSize: 22,
+                  letterSpacing: 1,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Dabartinė: $status',
+            style: const TextStyle(color: QortColors.textSecondary, fontSize: 13),
+          ),
+          const SizedBox(height: 12),
+          if (status != 'cancelled')
+            _btn(
+              'Atšaukti turnyrą',
+              LucideIcons.ban,
+              Colors.redAccent,
+              () => _confirmAndSetStatus(
+                'cancelled',
+                'Atšaukti turnyrą? Jis nebus rodomas viešame sąraše.',
+              ),
+            ),
+          if (status != 'cancelled') const SizedBox(height: 10),
+          if (status != 'archived')
+            _btn(
+              'Archyvuoti',
+              LucideIcons.archive,
+              Colors.grey,
+              () => _confirmAndSetStatus(
+                'archived',
+                'Archyvuoti turnyrą? Jis dingsta iš visur.',
+              ),
+            ),
+          if (status != 'archived') const SizedBox(height: 10),
+          if (status == 'finished' || status == 'cancelled' || status == 'archived')
+            _btn(
+              'Atstatyti į vykstantį',
+              LucideIcons.rotateCcw,
+              Colors.greenAccent,
+              () => _confirmAndSetStatus(
+                'in_progress',
+                'Grąžinti turnyrą į "in_progress" būseną?',
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBendraInfo() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3510,6 +3652,11 @@ class _AdminTournamentControlScreenState
 
         if (_disputedMatches.isNotEmpty) ...[
           _buildDisputesSection(),
+          const SizedBox(height: 20),
+        ],
+
+        if (_isSuperAdmin) ...[
+          _buildEventLifecycleSection(),
           const SizedBox(height: 20),
         ],
 
@@ -3662,7 +3809,8 @@ class _AdminTournamentControlScreenState
         .toList();
 
     bool hasMatches = divMatches.isNotEmpty;
-    bool isCompleted = widget.tournament['status'] == 'completed';
+    final tStatus = widget.tournament['status']?.toString();
+    bool isCompleted = tStatus == 'finished' || tStatus == 'completed';
 
     final validRoutingIds = _validRoutingIdsForDivision(division);
     final stageWarnings = _stageWarningsForDivision(division);

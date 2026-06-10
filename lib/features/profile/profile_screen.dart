@@ -20,12 +20,11 @@ import 'user_model.dart';
 import 'edit_profile_screen.dart';
 import 'settings_screen.dart';
 import 'status_avatar.dart';
-import 'my_records_screen.dart';
+import 'my_results_screen.dart';
 import 'insights_screen.dart';
 import '../teams/my_teams_screen.dart';
 import 'my_tournaments_screen.dart';
 import '../admin/admin_dashboard_screen.dart';
-import '../home/social_screen.dart';
 import '../leaderboard/leaderboard_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -49,6 +48,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isSuperAdmin = false;
   String _selectedSportName = "";
   Map<String, SportCatalogEntry> _catalogBySport = {};
+  Map<String, int> _sportWinRates = {};
+  bool _loadingWinRates = false;
 
   @override
   void initState() {
@@ -56,6 +57,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _checkSelectedSport();
     _loadSportCatalog();
     _loadIsSuperAdmin();
+    _loadAllWinRates();
   }
 
   Future<void> _loadIsSuperAdmin() async {
@@ -116,9 +118,87 @@ class _ProfileScreenState extends State<ProfileScreen> {
         widget.onUserUpdate(profile);
         setState(_checkSelectedSport);
       }
+      await _loadAllWinRates();
     } catch (e) {
       debugPrint("Klaida atnaujinant profilį: $e");
     }
+  }
+
+  Future<void> _loadAllWinRates() async {
+    setState(() => _loadingWinRates = true);
+
+    try {
+      final myId = Supabase.instance.client.auth.currentUser?.id;
+      if (myId == null) {
+        if (mounted) setState(() => _loadingWinRates = false);
+        return;
+      }
+
+      final results = await Future.wait([
+        Supabase.instance.client
+            .from('matches')
+            .select('winner_id, player1_id, player2_id, tournaments(sport)')
+            .or('player1_id.eq.$myId,player2_id.eq.$myId')
+            .eq('status', 'completed'),
+        Supabase.instance.client
+            .from('external_records')
+            .select('sport, i_won, record_type')
+            .eq('user_id', myId),
+      ]);
+
+      final matches = results[0] as List;
+      final externals = results[1] as List;
+      final perSport = <String, Map<String, int>>{};
+
+      for (final m in matches) {
+        final sport = (m['tournaments'] as Map?)?['sport']?.toString();
+        if (sport == null || sport.isEmpty) continue;
+
+        perSport.putIfAbsent(sport, () => {'wins': 0, 'total': 0});
+        perSport[sport]!['total'] = perSport[sport]!['total']! + 1;
+
+        if (m['winner_id'] != null && m['winner_id'] == myId) {
+          perSport[sport]!['wins'] = perSport[sport]!['wins']! + 1;
+        }
+      }
+
+      for (final r in externals) {
+        final sport = r['sport']?.toString();
+        if (sport == null || sport.isEmpty) continue;
+
+        final iWon = r['i_won'] as bool?;
+        if (iWon == null && r['record_type'] != 'tournament') continue;
+
+        perSport.putIfAbsent(sport, () => {'wins': 0, 'total': 0});
+        perSport[sport]!['total'] = perSport[sport]!['total']! + 1;
+
+        if (iWon == true) {
+          perSport[sport]!['wins'] = perSport[sport]!['wins']! + 1;
+        }
+      }
+
+      final rates = <String, int>{};
+      for (final entry in perSport.entries) {
+        final total = entry.value['total']!;
+        final wins = entry.value['wins']!;
+        rates[entry.key] = total > 0 ? ((wins / total) * 100).round() : 0;
+      }
+
+      if (mounted) {
+        setState(() {
+          _sportWinRates = rates;
+          _loadingWinRates = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Load win rates failed: $e');
+      if (mounted) setState(() => _loadingWinRates = false);
+    }
+  }
+
+  int _getSportWinRate(String sportName) {
+    if (sportName.isEmpty) return 0;
+    return _sportWinRates[sportName] ?? 0;
   }
 
   SportDetails? get _currentSport {
@@ -502,7 +582,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   ),
                                 ),
                                 Text(
-                                  "${(sport.winRate * 100).toInt()}%",
+                                  _loadingWinRates
+                                      ? '...'
+                                      : '${_getSportWinRate(_selectedSportName)}%',
                                   style: const TextStyle(
                                     color: QortColors.textPrimary,
                                     fontWeight: FontWeight.bold,
@@ -795,13 +877,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const Divider(height: 1, color: QortColors.border, indent: 44),
               _profileZoneRow(
                 context,
-                icon: LucideIcons.history,
-                iconColor: const Color(0xFF3B82F6),
+                icon: LucideIcons.trophy,
+                iconColor: const Color(0xFFEAB308),
                 title: 'Mano rezultatai',
-                subtitle: 'Turnyrai ir draugiški matčai',
+                subtitle: 'Turnyrai, mačai, išoriniai įrašai',
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const MyRecordsScreen()),
+                  MaterialPageRoute(builder: (_) => const MyResultsScreen()),
                 ),
               ),
               const Divider(height: 1, color: QortColors.border, indent: 44),
@@ -815,20 +897,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   context,
                   MaterialPageRoute(
                     builder: (_) => LeaderboardScreen(currentMode: widget.currentMode),
-                  ),
-                ),
-              ),
-              const Divider(height: 1, color: QortColors.border, indent: 44),
-              _profileZoneRow(
-                context,
-                icon: LucideIcons.users,
-                iconColor: QortColors.textSecondary,
-                title: 'Bendruomenės srautas',
-                subtitle: 'Draugų ir miesto aktivumas',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => SocialScreen(user: widget.user),
                   ),
                 ),
               ),

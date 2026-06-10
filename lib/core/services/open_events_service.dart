@@ -19,6 +19,9 @@ enum OpenEventsSortMode {
 class OpenEventsService {
   OpenEventsService._();
 
+  /// Matomi viešame sąraše (ne finished / cancelled / archived).
+  static const publicStatuses = ['open', 'closed', 'in_progress'];
+
   static const _eventsSelect = '''
       id, created_at, owner_id,
       name, sport, location, description, organizer,
@@ -36,17 +39,17 @@ class OpenEventsService {
   }) async {
     final client = Supabase.instance.client;
 
-    final eventsBase = client.from('events').select(_eventsSelect).eq(
+    final eventsBase = client.from('events').select(_eventsSelect).inFilter(
           'status',
-          'open',
+          publicStatuses,
         ).eq(
           'approval_status',
           EventOrganizerPolicy.approvalApproved,
         );
 
-    final tournamentsBase = client.from('tournaments').select().eq(
+    final tournamentsBase = client.from('tournaments').select().inFilter(
           'status',
-          'open',
+          publicStatuses,
         );
 
     final List<dynamic> eventsRes;

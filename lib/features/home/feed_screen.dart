@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/models/feed_post.dart';
 import '../../core/services/feed_service.dart';
 import '../../core/services/user_profile_loader.dart';
 import '../../core/theme/qort_design_system.dart';
 import '../../core/theme/qort_palette_extension.dart';
+import '../profile/my_results_screen.dart';
 import '../profile/user_model.dart';
+import '../teams/team_profile_screen.dart';
+import '../tournament/event_detail_screen.dart';
+import '../training/open_matches_screen.dart';
+import 'feed_post_card.dart';
 import 'feed_widgets.dart';
+import 'match_negotiation_screen.dart';
 
 class FeedScreen extends StatefulWidget {
   final UserProfile user;
@@ -50,11 +57,9 @@ class _FeedScreenState extends State<FeedScreen> {
     isOnVacation: false,
   );
 
-  FeedData? _feed;
+  List<FeedPost> _posts = [];
   bool _isLoading = true;
-  String? _joiningNoticeId;
-
-  String? get _userId => Supabase.instance.client.auth.currentUser?.id;
+  bool _loadFailed = false;
 
   List<String> get _mySports =>
       _user.sportsList.map((s) => s.name).where((n) => n.isNotEmpty).toList();
@@ -77,39 +82,47 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Future<void> _loadAll() async {
-    final uid = _userId;
-    if (uid == null) {
-      if (mounted) setState(() => _isLoading = false);
-      return;
-    }
-
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loadFailed = false;
+    });
 
     try {
-      final profile = await UserProfileLoader.loadById(uid);
-      if (profile != null && mounted) {
-        setState(() => _user = profile);
+      final uid = Supabase.instance.client.auth.currentUser?.id;
+      if (uid != null) {
+        final profile = await UserProfileLoader.loadById(uid);
+        if (profile != null && mounted) {
+          _user = profile;
+        }
       }
-    } catch (_) {}
 
-    final sports = _mySports;
-    FeedData? feed;
+      final sports = _mySports;
+      if (sports.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _posts = [];
+            _isLoading = false;
+          });
+        }
+        return;
+      }
 
-    if (sports.isEmpty) {
-      feed = FeedData.emptySports();
-    } else {
-      feed = await FeedService.load(
-        userId: uid,
-        mySports: sports,
-        userCity: _user.city,
-      );
-    }
+      final posts = await FeedService.loadFeed(sportsFilter: sports);
 
-    if (mounted) {
-      setState(() {
-        _feed = feed;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _posts = posts;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Feed load error: $e');
+      if (mounted) {
+        setState(() {
+          _loadFailed = true;
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -118,42 +131,93 @@ class _FeedScreenState extends State<FeedScreen> {
     await _loadAll();
   }
 
-  Future<void> _joinNotice(Map<String, dynamic> notice) async {
-    final uid = _userId;
-    if (uid == null) return;
+  Future<void> _handlePostTap(FeedPost post) async {
+    switch (post.postType) {
+      case 'tournament_match':
+      case 'tournament_joined':
+      case 'tournament_finished':
+        if (post.eventId != null) {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => EventDetailScreen(event: {'id': post.eventId}),
+            ),
+          );
+        }
+        break;
 
-    setState(() => _joiningNoticeId = notice['id']?.toString());
+      case 'training_match':
+        if (post.sourceTable == 'matches' && post.sourceId != null) {
+          await _openMatchDetail(post.sourceId!);
+        }
+        break;
 
-    final error = await FeedService.joinOpenMatch(userId: uid, notice: notice);
+      case 'open_match_created':
+        if (post.sourceId != null) {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => OpenMatchesScreen(
+                user: _user,
+                highlightId: post.sourceId,
+              ),
+            ),
+          );
+        }
+        break;
 
-    if (!mounted) return;
-    setState(() => _joiningNoticeId = null);
+      case 'team_created':
+        if (post.sourceId != null) {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => TeamProfileScreen(teamId: post.sourceId!),
+            ),
+          );
+        }
+        break;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          error ??
-              'Sėkmingai prisijungėte! Mačas suderintas. Gavote +15 XP.',
-        ),
-        backgroundColor: error != null ? Colors.red : Colors.green,
-      ),
-    );
-
-    if (error == null) await _loadAll();
+      case 'external_record':
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const MyResultsScreen(initialTab: 2),
+          ),
+        );
+        break;
+    }
   }
 
-  bool _isFeedFullyEmpty(FeedData feed) {
-    final friendEmpty =
-        !feed.friendActivity.failed && feed.friendActivity.data.isEmpty;
-    final openEmpty =
-        !feed.openMatches.failed && feed.openMatches.data.isEmpty;
-    return friendEmpty && openEmpty;
+  Future<void> _openMatchDetail(String matchId) async {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) return;
+
+    try {
+      final row = await Supabase.instance.client
+          .from('matches')
+          .select()
+          .eq('id', matchId)
+          .maybeSingle();
+
+      if (!mounted || row == null) return;
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MatchNegotiationScreen(
+            match: Map<String, dynamic>.from(row),
+            currentUserId: uid,
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Feed open match error: $e');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final p = context.qortPalette;
-    final feed = _feed;
     final hasSports = _mySports.isNotEmpty;
 
     return Scaffold(
@@ -164,18 +228,7 @@ class _FeedScreenState extends State<FeedScreen> {
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
-            const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  QortDesignSystem.space4,
-                  QortDesignSystem.space4,
-                  QortDesignSystem.space4,
-                  QortDesignSystem.space2,
-                ),
-                child: FeedCommunityHeader(),
-              ),
-            ),
-            if (_isLoading && feed == null)
+            if (_isLoading)
               const SliverToBoxAdapter(child: FeedSectionLoading())
             else if (!hasSports)
               SliverToBoxAdapter(
@@ -184,42 +237,39 @@ class _FeedScreenState extends State<FeedScreen> {
                   child: FeedNoSportsCta(onOpenProfile: widget.onOpenProfileTab),
                 ),
               )
-            else if (feed != null && _isFeedFullyEmpty(feed))
-              const SliverToBoxAdapter(
+            else if (_loadFailed)
+              SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.all(QortDesignSystem.space4),
-                  child: FeedEmptyCommunity(),
+                  padding: const EdgeInsets.all(QortDesignSystem.space4),
+                  child: Column(
+                    children: [
+                      const FeedQStreamEmpty(),
+                      TextButton(
+                        onPressed: _loadAll,
+                        child: const Text('Bandyti dar kartą'),
+                      ),
+                    ],
+                  ),
                 ),
               )
-            else if (feed != null) ...[
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: QortDesignSystem.space4,
+            else if (_posts.isEmpty)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: FeedQStreamEmpty(),
+              )
+            else
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) => FeedPostCard(
+                    post: _posts[index],
+                    currentUserId: _user.id.isNotEmpty
+                        ? _user.id
+                        : Supabase.instance.client.auth.currentUser?.id,
+                    onTap: () => _handlePostTap(_posts[index]),
                   ),
-                  child: FeedFriendActivitySection(
-                    items: feed.friendActivity.data,
-                    failed: feed.friendActivity.failed,
-                  ),
+                  childCount: _posts.length,
                 ),
               ),
-              const SliverToBoxAdapter(
-                child: SizedBox(height: QortDesignSystem.space6),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: QortDesignSystem.space4,
-                  ),
-                  child: FeedOpenMatchesSection(
-                    notices: feed.openMatches.data,
-                    failed: feed.openMatches.failed,
-                    joiningId: _joiningNoticeId,
-                    onJoin: _joinNotice,
-                  ),
-                ),
-              ),
-            ],
             SliverToBoxAdapter(
               child: SizedBox(height: feedScrollBottomPadding(context)),
             ),

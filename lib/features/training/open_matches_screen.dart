@@ -1,6 +1,4 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import '../../core/services/demo_flow_service.dart';
 import '../../core/services/user_sports_service.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -15,7 +13,6 @@ import '../../core/theme/qort_design_system.dart';
 import '../../core/theme/qort_colors.dart';
 import '../../core/theme/qort_palette_extension.dart';
 import '../../core/constants/app_shell_layout.dart';
-import '../../core/theme/qort_theme.dart';
 import '../../core/utils/sport_icons.dart';
 import '../../core/utils/sport_levels.dart';
 import '../../core/widgets/qort_ambient_background.dart';
@@ -24,14 +21,33 @@ import '../../core/widgets/qort_form_help.dart';
 import '../profile/user_model.dart';
 import '../profile/status_avatar.dart';
 
+const _formSectionLabel = TextStyle(
+  fontFamily: 'Anton',
+  fontSize: 13,
+  color: Color(0xFFEAB308),
+  letterSpacing: 1.2,
+);
+
+const _formBodyStyle = TextStyle(
+  color: Colors.white,
+  fontSize: 14,
+);
+
+const _formHelperStyle = TextStyle(
+  color: Colors.white54,
+  fontSize: 11,
+);
+
 class OpenMatchesScreen extends StatefulWidget {
   final UserProfile user;
   final bool openCreateDialog;
+  final String? highlightId;
 
   const OpenMatchesScreen({
     super.key,
     required this.user,
     this.openCreateDialog = false,
+    this.highlightId,
   });
 
   @override
@@ -253,38 +269,6 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
     }
   }
 
-  Future<void> _runTrainingDemo() async {
-    if (!kDebugMode) return;
-    if (widget.user.sportsList.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Profilyje pridėkite sporto šaką.'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-    final sport = widget.user.sportsList.first.name;
-    final result = await DemoFlowService.simulateTrainingSparring(
-      userId: widget.user.id,
-      sportName: sport,
-      level: widget.user.sportsList.first.level,
-      city: widget.user.city,
-    );
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(result.message),
-        backgroundColor: result.ok ? Colors.green : Colors.red,
-        duration: const Duration(seconds: 5),
-      ),
-    );
-    if (result.ok) _fetchNotices();
-  }
-
   Future<void> _showCreateNoticeDialog() async {
     if (widget.user.sportsList.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -368,18 +352,32 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
                       child: Container(
                         width: 40,
                         height: 4,
-                        margin: const EdgeInsets.only(bottom: 20),
+                        margin: const EdgeInsets.only(bottom: 12),
                         decoration: BoxDecoration(
                           color: QortColors.border,
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
                     ),
-                    Text(
-                      "SUKURTI SKELBIMĄ",
-                      style: GoogleFonts.bebasNeue(
-                        fontSize: 28,
-                        color: QortColors.textPrimary,
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Row(
+                        children: [
+                          const Text(
+                            'NAUJAS SKELBIMAS',
+                            style: TextStyle(
+                              fontFamily: 'Anton',
+                              fontSize: 16,
+                              color: Color(0xFFEAB308),
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            icon: const Icon(LucideIcons.x, color: Colors.white),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -390,14 +388,15 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // SPORTAS
+                    const Text('SPORTO ŠAKA', style: _formSectionLabel),
+                    const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
                       initialValue: selectedSport,
                       dropdownColor: QortColors.background,
-                      style: const TextStyle(color: QortColors.textPrimary),
+                      style: _formBodyStyle,
                       decoration: const InputDecoration(
-                        labelText: "Sporto šaka",
-                        labelStyle: TextStyle(color: QortColors.textSecondary),
+                        labelText: "Pasirink sportą",
+                        labelStyle: _formHelperStyle,
                         filled: true,
                         fillColor: QortColors.background,
                         border: OutlineInputBorder(),
@@ -453,23 +452,22 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
                           ),
                           if (myLevelDesc.isNotEmpty) ...[
                             const SizedBox(height: 4),
-                            Text(
-                              myLevelDesc,
-                              style: const TextStyle(
-                                color: QortColors.textSecondary,
-                                fontSize: 11,
-                              ),
-                            ),
+                            Text(myLevelDesc, style: _formHelperStyle),
                           ],
                         ],
                       ),
                     ),
                     const SizedBox(height: 20),
 
-                    // IEŠKOMAS VARŽOVO LYGIS
+                    const Text('IEŠKOMAS VARŽOVO LYGIS', style: _formSectionLabel),
+                    const SizedBox(height: 6),
                     Text(
-                      "Ieškomas varžovo lygis: ${SportLevels.rangeLabel(sportEntry, opponentLevelRange.start.round(), opponentLevelRange.end.round())}",
-                      style: const TextStyle(color: QortColors.textPrimary),
+                      SportLevels.rangeLabel(
+                        sportEntry,
+                        opponentLevelRange.start.round(),
+                        opponentLevelRange.end.round(),
+                      ),
+                      style: _formBodyStyle,
                     ),
                     RangeSlider(
                       values: opponentLevelRange,
@@ -496,14 +494,15 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
                     ),
                     const SizedBox(height: 10),
 
-                    // FORMATAS
+                    const Text('FORMATAS', style: _formSectionLabel),
+                    const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
                       initialValue: selectedFormat,
                       dropdownColor: QortColors.background,
-                      style: const TextStyle(color: QortColors.textPrimary),
+                      style: _formBodyStyle,
                       decoration: const InputDecoration(
-                        labelText: "Formatas",
-                        labelStyle: TextStyle(color: QortColors.textSecondary),
+                        labelText: "Pasirink formatą",
+                        labelStyle: _formHelperStyle,
                         filled: true,
                         fillColor: QortColors.background,
                         border: OutlineInputBorder(),
@@ -531,7 +530,8 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
                     ),
                     const SizedBox(height: 15),
 
-                    // DATA IR LAIKAS
+                    const Text('DATA IR LAIKAS', style: _formSectionLabel),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
                         Expanded(
@@ -551,7 +551,7 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
                                   : DateFormat(
                                       'yyyy-MM-dd',
                                     ).format(selectedDate!),
-                              style: const TextStyle(color: QortColors.textPrimary),
+                              style: _formBodyStyle,
                             ),
                             onPressed: () async {
                               final d = await showDatePicker(
@@ -584,7 +584,7 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
                               selectedTime == null
                                   ? "Laikas"
                                   : selectedTime!.format(context),
-                              style: const TextStyle(color: QortColors.textPrimary),
+                              style: _formBodyStyle,
                             ),
                             onPressed: () async {
                               final t = await showTimePicker(
@@ -601,13 +601,14 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
                     ),
                     const SizedBox(height: 15),
 
-                    // LOKACIJA
+                    const Text('VIETA', style: _formSectionLabel),
+                    const SizedBox(height: 8),
                     TextField(
                       controller: locationCtrl,
-                      style: const TextStyle(color: QortColors.textPrimary),
+                      style: _formBodyStyle,
                       decoration: const InputDecoration(
-                        labelText: "Miestas / Arena",
-                        labelStyle: TextStyle(color: QortColors.textSecondary),
+                        labelText: "Miestas / arena",
+                        labelStyle: _formHelperStyle,
                         filled: true,
                         fillColor: QortColors.background,
                         border: OutlineInputBorder(),
@@ -831,31 +832,13 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
                     style: QortDesignSystem.h2.copyWith(color: p.textSecondary),
                   ),
                 ),
-                if (kDebugMode)
-                  IconButton(
-                    tooltip: 'Demo: skelbimas → mačas',
-                    icon: Icon(LucideIcons.flaskConical, color: accent),
-                    onPressed: _isLoading ? null : _runTrainingDemo,
-                  ),
                 IconButton(
-                  icon: Icon(LucideIcons.plusCircle, color: accent),
+                  icon: const Icon(LucideIcons.plusCircle, color: accent),
                   onPressed: _showCreateNoticeDialog,
                 ),
               ],
             ),
           ),
-          if (kDebugMode)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              child: Text(
-                'Demo (kolonėlė): sukuria skelbimą, priima varžovą iš DB ir užbaigia sparingo mačą.',
-                style: TextStyle(
-                  color: p.textSecondary,
-                  fontSize: 11,
-                  height: 1.3,
-                ),
-              ),
-            ),
           Padding(
             padding: const EdgeInsets.all(QortDesignSystem.space4),
             child: QortInput(
@@ -869,7 +852,7 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
           ),
           Expanded(
             child: _isLoading
-                ? Center(child: CircularProgressIndicator(color: accent))
+                ? const Center(child: CircularProgressIndicator(color: accent))
                 : _notices.isEmpty
                 ? QortEmptyState(
                     icon: LucideIcons.clipboardList,
@@ -910,13 +893,23 @@ class _OpenMatchesScreenState extends State<OpenMatchesScreen> {
                         final String price = notice['court_price'] ?? "";
                         final String split = notice['price_split'] ?? "";
 
+                        final noticeId = notice['id']?.toString() ?? '';
+                        final isHighlighted =
+                            widget.highlightId != null &&
+                            widget.highlightId == noticeId;
+
                         return Container(
                           margin: const EdgeInsets.only(bottom: 15),
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
                             color: QortColors.surface,
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: QortColors.border),
+                            border: Border.all(
+                              color: isHighlighted
+                                  ? QortDesignSystem.training
+                                  : QortColors.border,
+                              width: isHighlighted ? 2 : 1,
+                            ),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,

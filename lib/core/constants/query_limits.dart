@@ -30,6 +30,8 @@ class QueryLimits {
 
   static const int feedOpenMatches = 10;
 
+  static const int feedPosts = 50;
+
   static const int adminTournaments = 100;
 
   static const int myTournaments = 50;

@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants/event_organizer_policy.dart';
 import '../../core/constants/query_limits.dart';
 import '../../core/services/event_approval_service.dart';
+import '../../core/services/event_lifecycle_service.dart';
 
 // Įsitikinkite, kad šie failai yra tame pačiame aplanke
 import 'create_tournament_screen.dart';
@@ -142,54 +143,137 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Future<void> _deleteTournament(Map<String, dynamic> t) async {
     final eventId = t['event_id']?.toString();
+    final tournamentId = t['id']?.toString();
 
-    final confirmed = await showDialog<bool>(
+    final action = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Ištrinti turnyrą?'),
-        content: const Text(
-          'Bus ištrintas turnyras kartu su visais divizionais '
-          '(LIGHT, MIDDLE, HARD jei yra) ir jų dalyviais. '
-          'Šio veiksmo nebus galima atšaukti.',
+        backgroundColor: Colors.red.shade900,
+        title: const Row(
+          children: [
+            Icon(LucideIcons.alertTriangle, color: Colors.white),
+            SizedBox(width: 8),
+            Text(
+              'PAVOJINGA OPERACIJA',
+              style: TextStyle(color: Colors.white),
+            ),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Ištrynus turnyrą:',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              '✅ Mačai išlieka (be turnyro nuorodos)',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            Text(
+              '✅ Dalyviai išlieka istorijoje',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            Text(
+              '✅ RP / XP taškai išlieka',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            Text(
+              '❌ Kainodara dingsta',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            Text(
+              '❌ Pokalbis dingsta',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            Text(
+              '❌ Rėmėjai dingsta',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'REKOMENDUOJAMA: vietoj ištrynimo naudok „Archyvuoti“ — '
+              'turnyras lieka DB, bet paslepiamas iš sąrašų.',
+              style: TextStyle(color: Color(0xFFEAB308), fontSize: 12),
+            ),
+          ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Atšaukti'),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Atšaukti', style: TextStyle(color: Colors.white)),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Ištrinti'),
+            onPressed: () => Navigator.pop(ctx, 'archive'),
+            child: const Text(
+              'Archyvuoti',
+              style: TextStyle(color: Color(0xFFEAB308)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'delete'),
+            child: const Text('IŠTRINTI', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
     );
-    if (confirmed != true) return;
+
+    if (action == null || action.isEmpty) return;
 
     try {
       final client = Supabase.instance.client;
-      if (eventId != null && eventId.isNotEmpty) {
-        // Event-level delete (CASCADE should remove divisions/tournaments).
-        await client.from('events').delete().eq('id', eventId);
-      } else {
-        // Fallback: legacy tournament delete.
-        await client.from('tournaments').delete().eq('id', t['id']);
+
+      if (action == 'archive') {
+        if (eventId != null && eventId.isNotEmpty) {
+          await EventLifecycleService.setEventStatus(
+            eventId: eventId,
+            status: 'archived',
+          );
+        } else if (tournamentId != null && tournamentId.isNotEmpty) {
+          await EventLifecycleService.setTournamentStatus(
+            tournamentId: tournamentId,
+            status: 'archived',
+          );
+        }
+
+        await _loadTournaments();
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Turnyras archyvuotas'),
+            backgroundColor: Color(0xFFEAB308),
+          ),
+        );
+        return;
       }
 
-      await _loadTournaments();
+      if (action == 'delete') {
+        if (eventId != null && eventId.isNotEmpty) {
+          await client.from('events').delete().eq('id', eventId);
+        } else if (tournamentId != null && tournamentId.isNotEmpty) {
+          await client.from('tournaments').delete().eq('id', tournamentId);
+        }
 
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Turnyras ištrintas'),
-          backgroundColor: Colors.red,
-        ),
-      );
+        await _loadTournaments();
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Turnyras ištrintas'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Klaida trinant: $e')),
+        SnackBar(content: Text('Klaida: $e')),
       );
     }
   }
@@ -303,6 +387,51 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 )
               else
                 ..._pendingEvents.map(_buildPendingEventCard),
+              const SizedBox(height: 12),
+              Container(
+                decoration: BoxDecoration(
+                  color: QortColors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: QortColors.border),
+                ),
+                child: ListTile(
+                  leading: const Icon(
+                    LucideIcons.refreshCw,
+                    color: Color(0xFFEAB308),
+                  ),
+                  title: const Text(
+                    'Atnaujinti turnyrų statusus',
+                    style: TextStyle(
+                      color: QortColors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    'Pažymėti pasibaigusius kaip "finished"',
+                    style: TextStyle(color: QortColors.textSecondary, fontSize: 12),
+                  ),
+                  trailing: const Icon(
+                    LucideIcons.chevronRight,
+                    color: QortColors.textSecondary,
+                    size: 18,
+                  ),
+                  onTap: () async {
+                    try {
+                      await EventLifecycleService.updateLifecycle();
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Statusai atnaujinti')),
+                      );
+                      await _loadAll();
+                    } catch (e) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Klaida: $e')),
+                      );
+                    }
+                  },
+                ),
+              ),
               const SizedBox(height: 28),
             ],
 

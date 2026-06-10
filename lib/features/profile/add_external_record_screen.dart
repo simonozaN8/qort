@@ -507,7 +507,8 @@ class _AddExternalRecordScreenState extends State<AddExternalRecordScreen> {
         // Komandos narių įrašymas
         for (final memberId in _selectedMemberIds) {
           await Supabase.instance.client.from('match_player_stats').insert({
-            'record_id': recordId,
+            'match_id': recordId,
+            'match_source': 'external_record',
             'user_id': memberId,
             'team_id': _selectedTeamId,
             'is_guest': false,
@@ -516,7 +517,8 @@ class _AddExternalRecordScreenState extends State<AddExternalRecordScreen> {
         // Svečių įrašymas
         for (final guestName in _guestNames) {
           await Supabase.instance.client.from('match_player_stats').insert({
-            'record_id': recordId,
+            'match_id': recordId,
+            'match_source': 'external_record',
             'guest_name': guestName,
             'team_id': _selectedTeamId,
             'is_guest': true,
